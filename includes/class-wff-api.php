@@ -437,7 +437,7 @@ final class WFF_API {
             'created_by'=>get_current_user_id()
         ));
         if (!$wpdb->insert_id) { return self::error('建立邀請失敗',500); }
-        $link = add_query_arg('wff_invite',rawurlencode($token),get_permalink((int)get_option('wff_page_id')));
+        $link = add_query_arg('wff_invite',rawurlencode($token),WFF_Frontend::app_url());
         $sent = wp_mail($email,'家庭財務管理邀請','您收到家庭財務管理的邀請，7 天內可透過下列連結加入：'."\n".$link);
         WFF_Storage::activity($hid,'create_invite',0,$email);
         return array('link'=>$link,'email_sent'=>(bool)$sent,'expires_at'=>$expires);
@@ -507,7 +507,7 @@ final class WFF_API {
         wp_update_user(array('ID'=>$uid,'display_name'=>$username,'role'=>'subscriber'));
         $joined = self::finish_invite($invite,$uid);
         if (is_wp_error($joined)) { return $joined; }
-        return array('registered'=>true,'login'=>wp_login_url(get_permalink((int)get_option('wff_page_id'))));
+        return array('registered'=>true,'login'=>WFF_Frontend::app_url());
     }
 
     public static function activity($r) {
