@@ -381,6 +381,7 @@ final class WFF_API {
             "SELECT a.id,a.name,a.type,
              COALESCE(SUM(CASE WHEN t.kind='expense' AND t.account_id=a.id THEN t.amount
                   WHEN t.kind='transfer' AND t.destination_account_id=a.id THEN -t.amount
+                  WHEN t.kind='transfer' AND t.account_id=a.id THEN t.amount
                   WHEN t.kind='income' AND t.account_id=a.id THEN -t.amount ELSE 0 END),0) AS outstanding
              FROM $a a LEFT JOIN $t t ON t.household_id=a.household_id AND (t.account_id=a.id OR t.destination_account_id=a.id)
              WHERE a.household_id=%d AND a.type='credit' GROUP BY a.id,a.name,a.type ORDER BY a.id", $hid
@@ -539,6 +540,9 @@ final class WFF_API {
         if (!$rows) { return self::error('CSV 沒有資料'); }
         $head=array_map('trim',$rows[0]);
         $sheet=isset($head[0],$head[3]) && $head[0]==='日期' && $head[3]==='支出';
+        if (!$sheet && count(array_intersect(array('日期','範圍','類型','金額'), $head)) !== 4) {
+            return self::error('不支援的 CSV 欄位，請使用本系統匯出的 CSV 或指定 Google Sheet A–M 欄位格式');
+        }
         $out=array(); $errors=array(); $carry=''; $section='income';
         foreach (array_slice($rows,1) as $n=>$r) {
             $line=$n+2;
