@@ -276,3 +276,10 @@ body.wff-dialog-open{overflow:hidden}
 #wff-app .wff-remember input[type=checkbox]{width:18px;height:18px;flex:0 0 18px;margin:0;accent-color:#000}
 #wff-app .wff-login-help{text-align:right;font-size:12px;margin:10px 0 4px}
 #wff-app .wff-login-help a{text-underline-offset:4px}
+
+/* Optional invitation-free registration (no subscriptions / payments). */
+#wff-app .wff-auth-register{margin-top:28px;padding-top:24px;border-top:2px solid #000}
+#wff-app .wff-auth-register h2{font-size:23px;margin:0 0 9px;line-height:1.4}
+#wff-app .wff-auth-register p{font-size:12px;color:#525252;line-height:1.8;margin-bottom:16px}
+#wff-app .wff-auth-register .wff-button{width:100%}
+#wff-app .wff-honeypot{position:absolute!important;left:-99999px!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important}
