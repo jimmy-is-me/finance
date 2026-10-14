@@ -118,6 +118,7 @@
         icon(glyph)+'<span>'+e(label)+'</span>'+(S.view===key?'<b>↗</b>':'')+'</button>').join('')+
       '</nav><div class="wff-side-bottom"><div class="wff-role">● '+e(household?.name||'家庭')+' · '+(S.meta?.role==='owner'?'管理員':S.meta?.role==='editor'?'可編輯':'唯讀')+'</div>'+
       '<div class="wff-user">'+e(config.user.name)+'<a href="'+e(config.logout)+'">登出 ↗</a></div></div></aside>'+
+      (S.nav?'<button type="button" class="wff-menu-backdrop" data-action="toggle-nav" aria-label="關閉側邊導覽"></button>':'')+
       '<div class="wff-main"><header class="wff-topbar"><button class="wff-mobile-menu" data-action="toggle-nav" aria-label="切換選單" type="button">☰</button>'+
       '<div class="wff-breadcrumb">家庭空間 / <strong>'+e(views.find(x=>x[0]===S.view)?.[1]||'')+'</strong></div>'+
       '<div class="wff-top-actions">'+(canEdit()?'<button class="wff-button wff-add" data-action="new-transaction" type="button">＋ <span>新增記帳</span></button>':'')+
