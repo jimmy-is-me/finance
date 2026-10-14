@@ -124,8 +124,12 @@ final class WFF_Admin {
             . checked((bool) get_option('wff_redirect_members', 1), true, false)
             . '> 一般家庭成員登入後前往 Finance，避免進入 WordPress 後台</label>'
             . '<p class="description">管理員仍可正常使用 WordPress 後台。使用原生 WP 登入的使用者也會導向 Finance。</p></td></tr>';
+        echo '<tr><th scope="row">開放免費註冊</th><td><label><input name="registration_enabled" type="checkbox" value="1" '
+            . checked((bool) get_option('wff_registration_enabled', 1), true, false)
+            . '> 允許訪客在 Finance 首頁申請帳號</label>'
+            . '<p class="description">系統透過 WordPress 寄送設定密碼的郵件，首次登入後可建立自己的家庭空間；不需要付款或訂閱。</p></td></tr>';
         echo '</tbody></table><h2>家庭與資料</h2><p>家庭及公司收支對同一家庭所有成員共用，成員的查看／編輯權限由家庭擁有者在前台管理。'
-            . '邀請加入時可以建立帳號，不開放未受邀訪客自行建立帳號。</p>'
+            . '登入後可以建立自己的家庭，或透過邀請加入其他家庭。管理員可在此開啟或關閉免費自助註冊。</p>'
             . '<p>所有資訊皆保存在這個 WordPress 的專屬資料表，不會送往第三方訂閱或金流服務。</p>';
         submit_button('儲存設定');
         echo '</form><div class="wff-admin-panel"><h2>環境與安全</h2>'
@@ -140,6 +144,7 @@ final class WFF_Admin {
         check_admin_referer('wff_settings_save');
         update_option('wff_home_mode', !empty($_POST['home_mode']) ? 1 : 0);
         update_option('wff_redirect_members', !empty($_POST['redirect_members']) ? 1 : 0);
+        update_option('wff_registration_enabled', !empty($_POST['registration_enabled']) ? 1 : 0);
         $page_id = absint($_POST['page_id'] ?? 0);
         if ($page_id && get_post_type($page_id) === 'page') {
             update_option('wff_page_id', $page_id);
