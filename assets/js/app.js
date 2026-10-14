@@ -242,7 +242,7 @@
     return '<div class="wff-pagehead"><div><div class="wff-kicker">IMPORT / EXPORT</div>'+
       '<h1>你的資料，<span class="wff-highlight">你掌握</span></h1><p>支援 Google Sheet 的家庭收支欄位或通用 CSV 格式。</p></div></div>'+
       '<div class="wff-two"><section class="wff-panel"><div class="wff-panel-head"><h2>匯入 CSV</h2><span class="wff-pill yellow">GOOGLE SHEETS</span></div>'+
-      (canEdit()?'<form id="wff-import-form" class="wff-form"><label>選擇 CSV 檔案<input id="wff-csv-file" name="csv_file" type="file" accept=".csv,text/csv" required></label>'+
+      (canEdit()?'<form id="wff-import-form" class="wff-form"><label>選擇 CSV 檔案<input id="wff-csv-file" name="csv_file" type="file" accept=".csv,text/csv"></label>'+
         '<label>原始資料年份（用於 9/1 這類日期）<input name="year" type="number" min="2000" max="2100" value="'+e(S.importYear)+'"></label>'+
         '<p class="wff-small">'+e(S.csvName||'單次最多 1MB／2,000 筆。資料將先預覽，不會直接新增。')+'</p>'+
         '<button class="wff-button wff-primary" type="submit">預覽匯入資料 →</button></form>':
