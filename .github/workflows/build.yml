@@ -23,6 +23,8 @@ jobs:
           find . -name '*.php' -type f -print0 | xargs -0 -n1 php -l
       - name: Check JavaScript syntax
         run: node --check assets/js/app.js
+      - name: Test responsive monochrome design contract
+        run: node --test tests/ui-contract.test.mjs
       - name: Package installable plugin ZIP
         run: |
           mkdir -p dist staging/wumetax-finance
