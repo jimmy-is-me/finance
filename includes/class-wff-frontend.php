@@ -33,6 +33,7 @@ final class WFF_Frontend {
         add_action('template_redirect', array(__CLASS__, 'render'), 0);
         add_action('admin_post_nopriv_wff_login', array(__CLASS__, 'login'));
         add_action('admin_post_wff_login', array(__CLASS__, 'login'));
+        add_action('admin_post_nopriv_wff_register', array(__CLASS__, 'register_user'));
         add_filter('show_admin_bar', array(__CLASS__, 'hide_admin_bar'));
         add_filter('login_redirect', array(__CLASS__, 'login_redirect'), 10, 3);
         add_action('admin_init', array(__CLASS__, 'redirect_members'));
@@ -67,6 +68,7 @@ final class WFF_Frontend {
         self::ensure_page();
         add_option('wff_home_mode', 1);
         add_option('wff_redirect_members', 1);
+        add_option('wff_registration_enabled', 1);
         add_option('wff_registration_notice', 1);
     }
 
@@ -85,6 +87,8 @@ final class WFF_Frontend {
             'login' => $redirect,
             'loginAction' => admin_url('admin-post.php'),
             'loginNonce' => wp_create_nonce('wff_front_login'),
+            'registerNonce' => wp_create_nonce('wff_register_user'),
+            'registrationEnabled' => (bool) get_option('wff_registration_enabled', 1),
             'lostPassword' => wp_lostpassword_url($redirect),
             'logout' => wp_logout_url(self::app_url()),
             'home' => self::app_url(),
@@ -176,4 +180,56 @@ final class WFF_Frontend {
         wp_safe_redirect($return);
         exit;
     }
+
+    /**
+     * Public signup requests a one-time password setup email; no password is
+     * sent via email or stored from a self-service form, and no plan/payment
+     * provisioning occurs.
+     */
+    public static function register_user() {
+        $back = self::app_url();
+        if (!get_option('wff_registration_enabled', 1)) {
+            wp_safe_redirect(add_query_arg('wff_signup', 'closed', $back));
+            exit;
+        }
+        if (!isset($_POST['wff_register_nonce'])
+            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['wff_register_nonce'])), 'wff_register_user')) {
+            wp_safe_redirect(add_query_arg('wff_signup', 'expired', $back));
+            exit;
+        }
+        if (!empty($_POST['fax_number'])) { // silent honeypot
+            wp_safe_redirect(add_query_arg('wff_signup', 'sent', $back));
+            exit;
+        }
+        $ip = sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        $key = 'wff_signup_' . hash('sha256', $ip);
+        $hits = (int) get_transient($key);
+        if ($hits >= 5) {
+            wp_safe_redirect(add_query_arg('wff_signup', 'limited', $back));
+            exit;
+        }
+        set_transient($key, $hits + 1, HOUR_IN_SECONDS);
+        $username = sanitize_user(wp_unslash($_POST['username'] ?? ''), true);
+        $email = sanitize_email(wp_unslash($_POST['email'] ?? ''));
+        if (strlen($username) < 3 || strlen($username) > 50 || !validate_username($username)
+            || !is_email($email) || username_exists($username) || email_exists($email)) {
+            wp_safe_redirect(add_query_arg('wff_signup', 'invalid', $back));
+            exit;
+        }
+        $uid = wp_insert_user(array(
+            'user_login' => $username,
+            'user_email' => $email,
+            'user_pass' => wp_generate_password(32, true, true),
+            'display_name' => $username,
+            'role' => 'subscriber',
+        ));
+        if (is_wp_error($uid)) {
+            wp_safe_redirect(add_query_arg('wff_signup', 'failed', $back));
+            exit;
+        }
+        wp_new_user_notification($uid, null, 'user');
+        wp_safe_redirect(add_query_arg('wff_signup', 'sent', $back));
+        exit;
+    }
+
 }
