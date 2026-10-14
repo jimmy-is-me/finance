@@ -51,7 +51,7 @@ add_action('wp_enqueue_scripts', function () {
     wp_localize_script('wff-app', 'WFF_CONFIG', array(
         'rest' => esc_url_raw(rest_url('wff/v1/')),
         'nonce' => wp_create_nonce('wp_rest'),
-        'login' => wp_login_url(get_permalink($page_id)),
+        'login' => wp_login_url(isset($_GET['wff_invite']) ? add_query_arg('wff_invite', sanitize_text_field(wp_unslash($_GET['wff_invite'])), get_permalink($page_id)) : get_permalink($page_id)),
         'logout' => wp_logout_url(get_permalink($page_id)),
         'home' => get_permalink($page_id),
         'user' => is_user_logged_in() ? array(
