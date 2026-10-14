@@ -3,7 +3,7 @@
  * Plugin Name: WUMETAX Finance
  * Plugin URI: https://github.com/jimmy-is-me/finance
  * Description: 家庭與公司共用收支、信用卡、報表和成員管理的獨立財務 Web App。
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires at least: 6.2
  * Requires PHP: 7.4
  * Author: WUMETAX 末特數位科技
@@ -13,7 +13,7 @@
  */
 if (!defined('ABSPATH')) { exit; }
 
-define('WFF_VERSION', '1.0.0');
+define('WFF_VERSION', '1.1.0');
 define('WFF_PATH', plugin_dir_path(__FILE__));
 define('WFF_URL', plugin_dir_url(__FILE__));
 
@@ -65,6 +65,7 @@ add_action('template_redirect', function () {
     $page_id = (int) get_option('wff_page_id');
     if ($page_id && is_page($page_id)) {
         status_header(200);
+        nocache_headers();
         include WFF_PATH . 'templates/app.php';
         exit;
     }
