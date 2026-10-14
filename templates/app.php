@@ -5,7 +5,7 @@ if (!defined('ABSPATH')) { exit; }
 <head>
     <meta charset="<?php bloginfo('charset'); ?>">
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-    <meta name="theme-color" content="#FFFDF5">
+    <meta name="theme-color" content="#FFFFFF">
     <meta name="robots" content="noindex,nofollow,noarchive">
     <title>家庭財務管理 · WUMETAX Finance</title>
     <?php wp_head(); ?>
