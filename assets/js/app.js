@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.0.0 — no external runtime dependencies */
+/* WUMETAX Finance v1.1.0 — monochrome UI, responsive layout */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -108,8 +108,8 @@
   }
   function header() {
     const household = current();
-    return '<div class="wff-shell"><aside class="wff-sidebar '+(S.nav?'open':'')+'">'+
-      '<div class="wff-brand"><div class="wff-brand-mark">F<span>✳</span></div><div><strong>FAMILY<br>FINANCE</strong><small>WUMETAX LAB</small></div></div>'+
+    return '<a class="wff-skip-link" href="#wff-main">跳至主內容</a><div class="wff-shell"><aside class="wff-sidebar '+(S.nav?'open':'')+'">'+
+      '<div class="wff-brand"><div class="wff-brand-mark">F<span>✳</span></div><div><strong>家庭財務</strong><small>WUMETAX FINANCE</small></div></div>'+
       '<div class="wff-side-section">WORKSPACE / 家庭</div>'+
       '<label class="wff-household-select"><span class="wff-sr-only">選擇家庭空間</span><select id="wff-household">'+
       S.households.map(h=>'<option value="'+e(h.id)+'" '+(Number(h.id)===S.hid?'selected':'')+'>'+e(h.name)+'</option>').join('')+'</select></label>'+
@@ -122,10 +122,14 @@
       '<div class="wff-breadcrumb">家庭空間 / <strong>'+e(views.find(x=>x[0]===S.view)?.[1]||'')+'</strong></div>'+
       '<div class="wff-top-actions">'+(canEdit()?'<button class="wff-button wff-add" data-action="new-transaction" type="button">＋ <span>新增記帳</span></button>':'')+
       '<div class="wff-avatar" title="'+e(config.user.name)+'">'+e(config.user.name.slice(0,1))+'</div></div></header>'+
-      '<main class="wff-content">'+(S.notice?'<div class="wff-alert" role="status">'+e(S.notice)+'</div>':'');
+      '<main class="wff-content" id="wff-main" tabindex="-1">'+(S.notice?'<div class="wff-alert" role="status">'+e(S.notice)+'</div>':'');
   }
   function footer() {
-    return '</main><footer class="wff-footer">© WUMETAX FINANCE · 私有財務資料儲存在 WordPress</footer></div></div>';
+    return '</main><footer class="wff-footer">© WUMETAX FINANCE · 私有財務資料儲存在 WordPress</footer></div></div>'+
+      '<nav class="wff-mobile-bottom" aria-label="手機快速導覽">'+
+      [['dashboard','總覽','⌂'],['transactions','記帳','≡'],['accounts','帳戶','▣'],['members','家庭','♧']]
+        .map(([key,name,symbol])=>'<button type="button" data-view="'+key+'" class="'+(S.view===key?'active':'')+'" aria-current="'+(S.view===key?'page':'false')+'"><span aria-hidden="true">'+symbol+'</span>'+name+'</button>').join('')+
+      '<button type="button" data-action="toggle-nav" aria-expanded="'+(S.nav?'true':'false')+'"><span aria-hidden="true">⋯</span>更多</button></nav>';
   }
   function periodPicker() {
     return '<label class="wff-month">月份 <input id="wff-month" type="month" value="'+e(S.month)+'"></label>';
@@ -140,7 +144,7 @@
     const days=d.daily.slice(0,9);
     const maxTrend=Math.max(1,...d.trend.map(x=>Math.max(Number(x.income),Number(x.expense))));
     return '<div class="wff-pagehead"><div><div class="wff-kicker">OVERVIEW / 財務總覽 <span class="wff-star">✳</span></div>'+
-      '<h1>每一筆花費，<br><span class="wff-highlight">都很有數。</span></h1><p>家庭生活與公司營運，清楚分開、一起掌握。</p></div>'+periodPicker()+'</div>'+
+      '<h1>家庭與公司 <span class="wff-highlight">財務總覽</span></h1><p>家庭生活與公司營運，清楚分開、一起掌握。</p></div>'+periodPicker()+'</div>'+
       '<div class="wff-metrics">'+
       card('家庭支出',f.expense,'tone-pink','本月家庭生活費')+
       card('公司收入',b.income,'tone-yellow','本月營業收入')+
@@ -172,7 +176,7 @@
   function empty(message) { return '<div class="wff-empty">✳<p>'+e(message)+'</p></div>'; }
   function transactions() {
     const d=S.transactions || {items:[],page:1,pages:1,total:0};
-    return '<div class="wff-pagehead"><div><div class="wff-kicker">LEDGER / 每筆都清楚</div><h1>收支<span class="wff-highlight">紀錄</span></h1>'+
+    return '<div class="wff-pagehead"><div><div class="wff-kicker">LEDGER / 每筆都清楚</div><h1>收支 <span class="wff-highlight">紀錄</span></h1>'+
       '<p>家庭與公司分別分類，支援月份及類型篩選。</p></div>'+periodPicker()+'</div>'+
       '<section class="wff-panel"><div class="wff-toolbar">'+
       '<label>收支空間<select id="wff-scope"><option value="all">全部</option>'+
@@ -198,7 +202,7 @@
   function accounts() {
     const accounts=S.meta.accounts||[],cards=S.dashboard.cards||[];
     return '<div class="wff-pagehead"><div><div class="wff-kicker">ACCOUNTS / MONEY</div>'+
-      '<h1>帳戶與<span class="wff-highlight">信用卡</span></h1>'+
+      '<h1>帳戶與 <span class="wff-highlight">信用卡</span></h1>'+
       '<p>記錄付款來源，信用卡還款使用「轉帳」，不會再次增加支出。</p></div>'+
       (canEdit()?simpleBtn('＋ 新增帳戶','new-account','wff-primary'):'')+'</div>'+
       '<div class="wff-account-grid">'+accounts.map(a=>'<article class="wff-account-box"><div class="wff-account-type">'+
@@ -213,7 +217,7 @@
     const cats=S.meta.categories||[];
     const groups=[['family','expense','家庭支出'],['family','income','家庭收入'],['business','income','公司收入'],['business','expense','公司支出']];
     return '<div class="wff-pagehead"><div><div class="wff-kicker">CATEGORIES / TAGS</div>'+
-      '<h1>分類<span class="wff-highlight">管理</span></h1><p>自己決定分類名稱與顏色，保持每一筆收支整齊。</p></div>'+
+      '<h1>分類 <span class="wff-highlight">管理</span></h1><p>自己決定分類名稱與顏色，保持每一筆收支整齊。</p></div>'+
       (canEdit()?simpleBtn('＋ 新增分類','new-category','wff-primary'):'')+'</div>'+
       '<div class="wff-two">'+groups.map(([scope,kind,name])=>'<section class="wff-panel"><div class="wff-panel-head"><h2>'+name+'</h2>'+
         '<span class="wff-pill yellow">'+cats.filter(x=>x.scope===scope&&x.kind===kind).length+' 種</span></div>'+
@@ -225,7 +229,7 @@
   }
   function members() {
     return '<div class="wff-pagehead"><div><div class="wff-kicker">TOGETHER / FAMILY</div>'+
-      '<h1>一起<span class="wff-highlight">管理</span></h1><p>家庭和公司收支皆為共用資料，依成員權限允許檢視或編輯。</p></div>'+
+      '<h1>家庭 <span class="wff-highlight">成員</span></h1><p>家庭和公司收支皆為共用資料，依成員權限允許檢視或編輯。</p></div>'+
       (isOwner()?simpleBtn('＋ 邀請成員','new-invite','wff-primary'):'')+'</div>'+
       '<section class="wff-panel"><div class="wff-panel-head"><h2>家庭成員</h2><span class="wff-pill violet">'+S.meta.members.length+' 位</span></div>'+
       '<div class="wff-members">'+S.meta.members.map(x=>'<div class="wff-member"><div class="wff-member-avatar">'+e(x.display_name.slice(0,1))+'</div>'+
@@ -240,7 +244,7 @@
   function importView() {
     const p=S.importPreview;
     return '<div class="wff-pagehead"><div><div class="wff-kicker">IMPORT / EXPORT</div>'+
-      '<h1>你的資料，<span class="wff-highlight">你掌握</span></h1><p>支援 Google Sheet 的家庭收支欄位或通用 CSV 格式。</p></div></div>'+
+      '<h1>資料 <span class="wff-highlight">匯入與匯出</span></h1><p>支援 Google Sheet 的家庭收支欄位或通用 CSV 格式。</p></div></div>'+
       '<div class="wff-two"><section class="wff-panel"><div class="wff-panel-head"><h2>匯入 CSV</h2><span class="wff-pill yellow">GOOGLE SHEETS</span></div>'+
       (canEdit()?'<form id="wff-import-form" class="wff-form"><label>選擇 CSV 檔案<input id="wff-csv-file" name="csv_file" type="file" accept=".csv,text/csv"></label>'+
         '<label>原始資料年份（用於 9/1 這類日期）<input name="year" type="number" min="2000" max="2100" value="'+e(S.importYear)+'"></label>'+
@@ -259,7 +263,7 @@
       '<div class="wff-note">上限 10,000 筆／次。匯入前先在 WordPress 備份資料庫。不要重複匯入相同月份，否則會新增重複紀錄。</div></section></div>';
   }
   function activity() {
-    return '<div class="wff-pagehead"><div><div class="wff-kicker">AUDIT / HISTORY</div><h1>操作<span class="wff-highlight">紀錄</span></h1>'+
+    return '<div class="wff-pagehead"><div><div class="wff-kicker">AUDIT / HISTORY</div><h1>操作 <span class="wff-highlight">紀錄</span></h1>'+
       '<p>查看最近 50 筆家庭成員異動及財務操作。</p></div></div><section class="wff-panel">'+
       (S.activities.length?'<div class="wff-tablewrap"><table><thead><tr><th>時間（UTC）</th><th>成員</th><th>動作</th><th>資料 ID</th></tr></thead><tbody>'+
         S.activities.map(x=>'<tr><td>'+e(x.created_at)+'</td><td>'+e(x.display_name)+'</td><td>'+e(x.action)+'</td><td>'+e(x.object_id)+'</td></tr>').join('')+
