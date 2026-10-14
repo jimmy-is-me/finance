@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.1.0 — monochrome UI, responsive layout */
+/* WUMETAX Finance v1.2.0 — dedicated homepage & family finance */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -86,7 +86,18 @@
         '<label>密碼（至少 12 字）<input required name="password" minlength="12" type="password" autocomplete="new-password"></label>'+
         '<button class="wff-button wff-primary" type="submit">註冊並加入家庭 →</button></form>'+
         '<p class="wff-small">已經有 WordPress 帳號？直接登入即可接受邀請。</p>' : '')+
-      '<a class="wff-button wff-yellow wff-link" href="'+e(config.login)+'">登入 WordPress 帳號 ↗</a>'+
+      '<form method="post" action="'+e(config.loginAction)+'" class="wff-form wff-login-form" autocomplete="on">'+
+      '<input type="hidden" name="action" value="wff_login">'+
+      '<input type="hidden" name="wff_login_nonce" value="'+e(config.loginNonce)+'">'+
+      '<input type="hidden" name="wff_invite" value="'+e(inviteToken||'')+'">'+
+      '<label>使用者帳號或電子郵件<input name="log" required autocomplete="username" placeholder="輸入登入帳號"></label>'+
+      '<label>密碼<input name="pwd" type="password" required autocomplete="current-password" placeholder="輸入密碼"></label>'+
+      '<label class="wff-remember"><input name="rememberme" type="checkbox" value="1"> 保持登入</label>'+
+      '<button class="wff-button wff-primary" type="submit">登入 Finance →</button>'+
+      '</form>'+
+      '<div class="wff-login-help"><a href="'+e(config.lostPassword)+'">忘記密碼？</a></div>'+
+      (new URLSearchParams(location.search).get('wff_login') ?
+        '<div role="alert" class="wff-note">登入未成功，請檢查帳號與密碼；嘗試太多次請稍後再試</div>' : '')+
       '<div class="wff-auth-foot">PRIVATE DATA · NO SUBSCRIPTION · MADE WITH WUMETAX</div>'+
       '</div></section>';
   }
