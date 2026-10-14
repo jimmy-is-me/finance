@@ -96,6 +96,22 @@
       '<button class="wff-button wff-primary" type="submit">登入 Finance →</button>'+
       '</form>'+
       '<div class="wff-login-help"><a href="'+e(config.lostPassword)+'">忘記密碼？</a></div>'+
+      (!inv && config.registrationEnabled ?
+        '<div class="wff-auth-register"><h2>第一次使用 Finance？</h2>'+
+        '<p>免費建立帳號，不需信用卡，也沒有訂閱機制。完成後請查看 Email 設定密碼。</p>'+
+        '<form method="post" action="'+e(config.loginAction)+'" class="wff-form">'+
+        '<input type="hidden" name="action" value="wff_register">'+
+        '<input type="hidden" name="wff_register_nonce" value="'+e(config.registerNonce)+'">'+
+        '<label>使用者名稱<input name="username" minlength="3" maxlength="50" autocomplete="username" required></label>'+
+        '<label>電子郵件<input name="email" type="email" autocomplete="email" required></label>'+
+        '<label class="wff-honeypot" aria-hidden="true">Fax<input name="fax_number" type="text" tabindex="-1" autocomplete="off"></label>'+
+        '<button class="wff-button" type="submit">申請免費帳號 →</button>'+
+        '</form></div>' : '')+
+      (new URLSearchParams(location.search).get('wff_signup') ?
+        '<div class="wff-note" role="status">'+
+        (new URLSearchParams(location.search).get('wff_signup')==='sent'?'註冊申請已送出，若帳號已建立，請收取設定密碼的 Email；如未收到請確認垃圾信件與網站寄信設定。':
+         '註冊未完成，請檢查帳號、Email 是否可用，或稍後再試。')+
+        '</div>' : '')+
       (new URLSearchParams(location.search).get('wff_login') ?
         '<div role="alert" class="wff-note">登入未成功，請檢查帳號與密碼；嘗試太多次請稍後再試</div>' : '')+
       '<div class="wff-auth-foot">PRIVATE DATA · NO SUBSCRIPTION · MADE WITH WUMETAX</div>'+
