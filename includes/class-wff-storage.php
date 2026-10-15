@@ -69,6 +69,13 @@ final class WFF_Storage {
             household_id bigint(20) unsigned NOT NULL,
             name varchar(80) NOT NULL,
             type varchar(16) NOT NULL,
+            brand varchar(100) NOT NULL DEFAULT '',
+            notes varchar(255) NOT NULL DEFAULT '',
+            enabled tinyint(1) NOT NULL DEFAULT 1,
+            sort_order int(11) NOT NULL DEFAULT 0,
+            statement_day tinyint(3) unsigned DEFAULT NULL,
+            due_day tinyint(3) unsigned DEFAULT NULL,
+            funding_account_id bigint(20) unsigned DEFAULT NULL,
             created_at datetime NOT NULL,
             PRIMARY KEY  (id),
             KEY household_id (household_id)
@@ -83,6 +90,7 @@ final class WFF_Storage {
             amount decimal(14,2) NOT NULL,
             note varchar(255) NOT NULL DEFAULT '',
             payment_method varchar(24) NOT NULL DEFAULT 'cash',
+            payment_channel_id bigint(20) unsigned DEFAULT NULL,
             account_id bigint(20) unsigned DEFAULT NULL,
             destination_account_id bigint(20) unsigned DEFAULT NULL,
             created_by bigint(20) unsigned NOT NULL,
@@ -92,6 +100,7 @@ final class WFF_Storage {
             KEY household_date (household_id,occurred_on),
             KEY household_scope (household_id,scope,kind,occurred_on),
             KEY account_id (account_id),
+            KEY household_channel (household_id,payment_channel_id),
             KEY category_id (category_id)
         ) $c;");
         dbDelta("CREATE TABLE $log (
@@ -105,6 +114,8 @@ final class WFF_Storage {
             PRIMARY KEY  (id),
             KEY household_id (household_id)
         ) $c;");
+        // dbDelta adds missing columns/indexes without dropping historical data.
+        // Legacy account IDs, transaction funding links and categories remain unchanged.
         update_option('wff_db_version', WFF_VERSION);
     }
 
