@@ -25,6 +25,8 @@ jobs:
         run: node --check assets/js/app.js
       - name: Test responsive monochrome design contract
         run: node --test tests/*.test.mjs
+      - name: Test recurring loan schedule and amortization
+        run: php tests/loan-schedule.test.php
       - name: Package installable plugin ZIP
         run: |
           mkdir -p dist staging/wumetax-finance
