@@ -283,3 +283,59 @@ body.wff-dialog-open{overflow:hidden}
 #wff-app .wff-auth-register p{font-size:12px;color:#525252;line-height:1.8;margin-bottom:16px}
 #wff-app .wff-auth-register .wff-button{width:100%}
 #wff-app .wff-honeypot{position:absolute!important;left:-99999px!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important}
+
+
+/* v1.2.1 · Uniform modal field geometry.
+   Normalize inherited WordPress/theme/browser styles (date/number/select).
+   Two-column rows share exactly the same label and control tracks. */
+#wff-app .wff-modal .wff-form .wff-field{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:22px 52px;
+  align-content:start;
+  align-items:stretch;
+  gap:8px;
+  min-width:0;
+  margin:0;
+  padding:0;
+}
+#wff-app .wff-modal .wff-form .wff-field-title{
+  display:block;
+  min-height:22px;
+  height:22px;
+  line-height:22px;
+  margin:0;
+  padding:0;
+  font-weight:600;
+  white-space:nowrap;
+}
+#wff-app .wff-modal .wff-form .wff-field :is(input:not([type="hidden"]):not([type="checkbox"]):not([type="file"]),select){
+  display:block;
+  box-sizing:border-box;
+  width:100%;
+  height:52px!important;
+  min-height:52px!important;
+  max-height:52px!important;
+  margin:0!important;
+  border:1px solid #000;
+  border-radius:0;
+  padding:0 14px;
+  line-height:normal;
+  background:#fff;
+  vertical-align:top;
+}
+#wff-app .wff-modal .wff-form .wff-field input[type="color"]{
+  padding:5px!important;
+}
+#wff-app .wff-modal .wff-form-grid{
+  align-items:start;
+  grid-auto-rows:minmax(82px,auto);
+}
+#wff-app .wff-modal .wff-form-grid > .wff-field{
+  min-width:0;
+}
+@media(max-width:520px){
+  #wff-app .wff-modal .wff-form-grid{
+    grid-template-columns:minmax(0,1fr);
+  }
+}
