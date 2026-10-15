@@ -342,6 +342,75 @@
         '<p class="wff-small">不包含尚未匯入交易、前期帳單、手續費與銀行實際結帳日計算結果。</p></section>':'');
   }
   function empty(message) { return '<div class="wff-empty">✳<p>'+e(message)+'</p></div>'; }
+  function loanStatusText(status) {
+    return ({paid:'已繳',partial:'部分繳款',overdue:'已逾期',upcoming:'待繳'})[status]||status;
+  }
+  function loans() {
+    const data=S.loans||{items:[],today:new Date().toLocaleDateString('sv-SE')};
+    const all=data.items||[];
+    const rows=all.filter(x=>S.loanScope==='all'||x.scope===S.loanScope);
+    const live=rows.filter(x=>x.status==='active');
+    const dueCount=live.filter(x=>x.next_due?.due_on<=data.today).length;
+    const dueTotal=live.reduce((n,x)=>n+Number(x.next_due?.scheduled_amount||0),0);
+    const totalBalance=live.reduce((n,x)=>n+Number(x.remaining_principal_estimate||0),0);
+    const heading='<div class="wff-pagehead"><div><div class="wff-kicker">LOANS / MONTHLY PAYMENTS</div>'+
+      '<h1>貸款 <span class="wff-highlight">紀錄</span></h1>'+
+      '<p>設定一次還款條件，按月自動推算繳費日期；逐期確認是否繳款。</p></div>'+
+      (canEdit()?simpleBtn('＋ 新增貸款','new-loan','wff-primary'):'')+'</div>';
+    const cards='<div class="wff-metrics wff-loan-metrics">'+
+      card('追蹤貸款',live.length,'tone-neutral','目前啟用的貸款筆數')+
+      card('估算未償本金',totalBalance,'tone-neutral','依登錄繳款推算')+
+      card('下一期預計繳款',dueTotal,'tone-neutral','各貸款下一期待繳金額合計')+
+      card('待確認／逾期',dueCount,'tone-neutral','當期未確認的貸款筆數')+
+      '</div>';
+    const filter='<div class="wff-loan-toolbar"><label>記帳空間 <select id="wff-loan-scope">'+
+      [['all','全部'],['family','家庭'],['business','公司']].map(([key,label])=>
+       '<option value="'+key+'" '+(S.loanScope===key?'selected':'')+'>'+label+'</option>').join('')+
+      '</select></label><span class="wff-small">追蹤資料不會自動加進收支，以免重複記帳</span></div>';
+    const list=rows.map(loan=>{
+      const upcoming=loan.next_due;
+      const expanded=!!S.loanExpanded[loan.id];
+      const installments=loan.schedule||[];
+      let pivot=upcoming?installments.findIndex(x=>x.number===upcoming.number):Math.max(0,installments.length-1);
+      if(pivot<0)pivot=0;
+      const first=Math.max(0,pivot-2);
+      const visible=expanded?installments:installments.slice(first,first+13);
+      const nextText=upcoming?upcoming.due_on.replaceAll('-','/'): '無待繳期數';
+      return '<article class="wff-panel wff-loan-card">'+
+       '<div class="wff-loan-head"><div><div class="wff-kicker">'+e(scopeName(loan.scope))+
+       ' / '+(loan.status==='active'?'追蹤中':'已結束')+'</div>'+
+       '<h2>'+e(loan.name)+'</h2>'+
+       '<p>'+e(loan.lender||'未指定貸款機構')+'</p></div>'+
+       (canEdit()?'<button class="wff-button" type="button" data-action="edit-loan" data-id="'+e(loan.id)+'">編輯貸款</button>':'')+'</div>'+
+       '<div class="wff-loan-stats">'+
+       '<div><small>每月預計繳款</small><strong>'+money(loan.regular_payment)+'</strong></div>'+
+       '<div><small>下一期扣款日</small><strong>'+e(nextText)+'</strong></div>'+
+       '<div><small>估算剩餘本金</small><strong>'+money(loan.remaining_principal_estimate)+'</strong></div>'+
+       '<div><small>已繳／總期數</small><strong>'+e(loan.paid_count)+' / '+e(loan.installments)+'</strong></div>'+
+       '</div>'+
+       (loan.overdue_count>0?'<div class="wff-note wff-loan-warning">有 '+e(loan.overdue_count)+' 期尚未完成繳款，請檢查是否已由銀行扣款</div>':'')+
+       '<div class="wff-loan-section-title"><h3>每月繳費排程</h3>'+
+       '<span>首次 '+e(loan.first_due_on.replaceAll('-','/'))+' · 年利率 '+e(loan.annual_rate)+'%</span></div>'+
+       '<div class="wff-tablewrap"><table class="wff-loan-table"><thead><tr>'+
+       '<th>期數</th><th>應繳日</th><th>預計金額</th><th>狀態</th><th>實際繳款</th>'+
+       (canEdit()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
+       visible.map(p=>{
+         const note=p.note?'<small>'+e(p.note)+'</small>':'';
+         const paid=p.paid_on?'<b>'+e(p.paid_on.replaceAll('-','/'))+'</b> '+money(Number(p.paid_amount)+Number(p.extra_principal)): '—';
+         return '<tr><td>第 '+e(p.number)+' 期</td>'+
+           '<td>'+e(p.due_on.replaceAll('-','/'))+'</td>'+
+           '<td>'+money(p.scheduled_amount)+'</td>'+
+           '<td><span class="wff-loan-state wff-loan-state-'+e(p.status)+'">'+e(loanStatusText(p.status))+'</span></td>'+
+           '<td>'+paid+note+'</td>'+
+           (canEdit()?'<td><button type="button" class="wff-button wff-loan-pay-btn" data-action="pay-loan" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">'+(p.paid_on?'修改繳款':'登錄繳款')+'</button>'+
+             (p.paid_on?'<button type="button" class="wff-textbtn" data-action="undo-loan-payment" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">取消紀錄</button>':'')+'</td>':'')+'</tr>';
+       }).join('')+'</tbody></table></div>'+
+       (installments.length>13?'<button type="button" class="wff-textbtn wff-loan-expand" data-action="toggle-loan-schedule" data-id="'+e(loan.id)+'">'+(expanded?'收合期數 ↑':'檢視全部期數（'+e(installments.length)+'） ↓')+'</button>':'')+
+       '<p class="wff-small">本金與利息為估算，實際扣款與未償本金仍以銀行帳單為準。若有既有收支記帳，不會再重複建立支出。</p></article>';
+    }).join('');
+    return heading+cards+filter+(list||'<section class="wff-panel">'+empty('尚無貸款紀錄，新增貸款後會自動產生每月繳款排程')+'</section>')+
+      '<div class="wff-note">每月固定日期自動順延，遇到 2 月或小月不足指定日期時，改為當月最後一天；下一個月會恢復原扣款日。實際提前清償、利率變動、銀行調整扣款日等情況請以貸款契約為準。</div>';
+  }
   function transactions() {
     const d=S.transactions || {items:[],page:1,pages:1,total:0};
     return '<div class="wff-pagehead"><div><div class="wff-kicker">LEDGER / 每筆都清楚</div><h1>收支 <span class="wff-highlight">紀錄</span></h1>'+
