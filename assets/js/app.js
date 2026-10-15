@@ -254,44 +254,88 @@
   function periodPicker() {
     return '<label class="wff-month">月份 <input id="wff-month" type="month" value="'+e(S.month)+'"></label>';
   }
+  function financePanel(title, content, eyebrow='FINANCIAL ANALYSIS') {
+    return '<section class="wff-panel wff-chart-panel"><div class="wff-panel-head">'+
+      '<h2>'+e(title)+'</h2><span class="wff-pill">'+e(eyebrow)+'</span></div>'+content+'</section>';
+  }
   function dashboard() {
     const d=S.dashboard;
-    if (!d) return '<div class="wff-panel">正在取得財務總覽…</div>';
-    const f=d.totals.family,b=d.totals.business;
-    const totalIncome=Number(f.income)+Number(b.income),totalExpense=Number(f.expense)+Number(b.expense);
-    const categories=d.categories.filter(x=>x.scope==='family').slice(0,7);
-    const base=Math.max(1,...categories.map(x=>Number(x.total)));
-    const days=d.daily.slice(0,9);
-    const maxTrend=Math.max(1,...d.trend.map(x=>Math.max(Number(x.income),Number(x.expense))));
-    return '<div class="wff-pagehead"><div><div class="wff-kicker">OVERVIEW / 財務總覽 <span class="wff-star">✳</span></div>'+
-      '<h1>家庭與公司 <span class="wff-highlight">財務總覽</span></h1><p>家庭生活與公司營運，清楚分開、一起掌握。</p></div>'+periodPicker()+'</div>'+
+    if(!d)return '<div class="wff-panel">正在取得財務總覽…</div>';
+    const f=d.totals.family, b=d.totals.business;
+    const income=Number(f.income)+Number(b.income), expense=Number(f.expense)+Number(b.expense);
+    const ins=d.insights||{}, C=window.WFFCharts;
+    const famCategories=(ins.categories||[]).filter(x=>x.scope==='family');
+    const bizCategories=(ins.categories||[]).filter(x=>x.scope==='business');
+    const largest=[...famCategories,...bizCategories].sort((x,y)=>Number(y.total)-Number(x.total))[0];
+    const totalCredit=(d.cards||[]).reduce((sum,x)=>sum+Number(x.outstanding||0),0);
+    const biggest=d.recent?.filter(x=>x.kind==='expense').sort((x,y)=>Number(y.amount)-Number(x.amount))[0];
+    const monthSeries=[
+      {key:'family_income',label:'家庭收入'},{key:'family_expense',label:'家庭支出'},
+      {key:'business_income',label:'公司收入'},{key:'business_expense',label:'公司支出'}
+    ];
+    const chosenTop=[...famCategories,...bizCategories].sort((x,y)=>Number(y.total)-Number(x.total))
+      .map(x=>({...x,label:(x.scope==='business'?'公司 · ':'家庭 · ')+(x.label||'未分類')}));
+    const cardList=(d.cards||[]);
+    const getCharts = () => {
+      if(!C)return '<div class="wff-note">圖表元件尚未載入，請重新整理頁面。</div>';
+      return '<div class="wff-analytics-title"><span>MONTHLY INSIGHTS</span><h2>財務視覺分析</h2>'+
+        '<p>依目前選擇月份整理，折線圖可查看各點金額，手機可點擊資料點。</p></div>'+
+        '<div class="wff-two">'+
+        financePanel('近六個月收支折線圖',C.lines(ins.monthly||[],monthSeries,'month'),'6 MONTHS')+
+        financePanel('近 30 天每日支出',C.lines(ins.last30||[],[
+          {key:'family',label:'家庭支出'},{key:'business',label:'公司支出'}],'date',true),'30 DAYS')+
+        '</div><div class="wff-two">'+
+        financePanel('家庭支出雷達圖',C.radar(ins.radar||[]),'6 DIMENSIONS')+
+        financePanel('家庭支出分類占比',C.donut(famCategories),'HOUSEHOLD')+
+        '</div><div class="wff-two">'+
+        financePanel('公司支出分類占比',C.donut(bizCategories),'BUSINESS')+
+        financePanel('本月付款工具占比',C.methodDonut(ins.payment_methods||[]),'PAYMENT METHOD')+
+        '</div><div class="wff-two">'+
+        financePanel('支出前十大分類',C.bars(chosenTop),'TOP 10')+
+        financePanel('常用付款工具排行',C.bars(ins.payment_rank||[]),'TOP 10')+
+        '</div><div class="wff-two">'+
+        financePanel('信用卡消費排行',C.bars(ins.credit_rank||[]),'CREDIT CARDS')+
+        financePanel('行動支付使用排行',C.bars(ins.mobile_rank||[]),'MOBILE PAY')+
+        '</div>';
+    };
+    const latest=d.recent||[];
+    return '<div class="wff-pagehead"><div><div class="wff-kicker">OVERVIEW / 財務總覽</div>'+
+      '<h1>家庭與公司 <span class="wff-highlight">財務總覽</span></h1>'+
+      '<p>每筆收支獨立保存，家庭與公司分開統計，同時掌握本月財務概況。</p></div>'+periodPicker()+'</div>'+
       '<div class="wff-metrics">'+
       card('家庭支出',f.expense,'tone-pink','本月家庭生活費')+
       card('公司收入',b.income,'tone-yellow','本月營業收入')+
       card('公司支出',b.expense,'tone-purple','本月營運成本')+
-      card('整體淨額',totalIncome-totalExpense,'tone-mint','家庭＋公司收入扣除支出')+
-      '</div><div class="wff-wide-info"><span>本月總收入 <b>'+money(totalIncome)+'</b></span><span>本月總支出 <b>'+money(totalExpense)+'</b></span>'+
-      '<span>家庭收入 <b>'+money(f.income)+'</b></span></div>'+
-      '<div class="wff-two">'+
-      '<section class="wff-panel"><div class="wff-panel-head"><h2>家庭支出分類</h2><span class="wff-pill yellow">TOP 7</span></div>'+
-      (categories.length ? categories.map(x=>'<div class="wff-category-bar"><div class="wff-category-info"><span>'+e(x.label)+'</span><b>'+money(x.total)+'</b></div>'+
-        '<div class="wff-track"><div style="width:'+Math.min(100,100*Number(x.total)/base)+'%;background:'+e(x.color)+'"></div></div></div>').join('') : empty('這個月還沒有家庭支出'))+'</section>'+
-      '<section class="wff-panel"><div class="wff-panel-head"><h2>近六個月趨勢</h2><span class="wff-pill violet">IN / OUT</span></div>'+
-      '<div class="wff-trend">'+d.trend.map(x=>'<div class="wff-trend-col"><div class="wff-trend-bars">'+
-        '<span class="wff-trend-income" title="'+e(x.month)+' 收入 '+money(x.income)+'" style="height:'+Math.max(3,100*Number(x.income)/maxTrend)+'%"></span>'+
-        '<span class="wff-trend-expense" title="'+e(x.month)+' 支出 '+money(x.expense)+'" style="height:'+Math.max(3,100*Number(x.expense)/maxTrend)+'%"></span></div>'+
-        '<small>'+e(x.month.slice(5))+'月</small></div>').join('')+'</div><div class="wff-legend"><span>■ 收入</span><span>■ 支出</span></div></section></div>'+
-      '<div class="wff-two"><section class="wff-panel"><div class="wff-panel-head"><h2>家庭每日花費</h2><span class="wff-pill pink">DAILY</span></div>'+
-      (days.length?'<div class="wff-tablewrap"><table><thead><tr><th>日期</th><th>餐飲</th><th>其他</th><th>總計</th></tr></thead><tbody>'+
-        days.map(x=>'<tr><td>'+e(x.occurred_on.slice(5))+'</td><td>'+money(x.food)+'</td><td>'+money(x.other)+'</td><td><b>'+money(x.total)+'</b></td></tr>').join('')+
-        '</tbody></table></div>':empty('尚無每日花費'))+'</section>'+
+      card('整體淨額',income-expense,'tone-mint','家庭＋公司收入扣除支出')+
+      card('家庭收入',f.income,'tone-neutral','本月家庭其他收入')+
+      card('信用卡淨額估算',totalCredit,'tone-neutral','依已登錄交易推算，非銀行帳單')+
+      '<article class="wff-metric"><div class="wff-metric-label">最大支出分類</div>'+
+        '<div class="wff-metric-value wff-metric-text">'+e(largest?.label||'尚無資料')+'</div>'+
+        '<div class="wff-metric-sub">'+money(largest?.total||0)+'</div></article>'+
+      '<article class="wff-metric"><div class="wff-metric-label">近期最大單筆支出</div>'+
+        '<div class="wff-metric-value">'+money(biggest?.amount||0)+'</div>'+
+        '<div class="wff-metric-sub">僅顯示本月最近數筆交易中的最大值</div></article>'+
+      '</div>'+
+      '<div class="wff-wide-info"><span>總收入 <b>'+money(income)+'</b></span>'+
+      '<span>總支出 <b>'+money(expense)+'</b></span>'+
+      '<span>家庭結餘 <b>'+money(Number(f.income)-Number(f.expense))+'</b></span>'+
+      '<span>公司結餘 <b>'+money(Number(b.income)-Number(b.expense))+'</b></span></div>'+
+      getCharts()+
+      '<div class="wff-two"><section class="wff-panel"><div class="wff-panel-head"><h2>家庭每日花費明細</h2><span class="wff-pill">DAILY</span></div>'+
+      (d.daily?.length?'<div class="wff-tablewrap"><table><thead><tr><th>日期</th><th>餐飲</th><th>其他</th><th>總計</th></tr></thead><tbody>'+
+        d.daily.slice(0,12).map(x=>'<tr><td>'+e(x.occurred_on.slice(5))+'</td><td>'+money(x.food)+'</td><td>'+money(x.other)+'</td><td><b>'+money(x.total)+'</b></td></tr>').join('')+'</tbody></table></div>':
+        empty('這個月還沒有家庭花費'))+'</section>'+
       '<section class="wff-panel"><div class="wff-panel-head"><h2>最近交易</h2><button class="wff-textbtn" data-view="transactions">查看全部 →</button></div>'+
-      (d.recent.length?'<div class="wff-recent">'+d.recent.map(x=>'<div class="wff-recent-row"><div class="wff-recent-icon '+(x.kind==='income'?'income':'expense')+'">'+
-        (x.kind==='income'?'↗':x.kind==='transfer'?'↔':'↙')+'</div><div><b>'+e(x.category_name||readable(x.kind))+'</b><small>'+e(x.occurred_on)+' · '+scopeName(x.scope)+' · '+e(x.note||'無備註')+'</small></div>'+
-        '<strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+(x.kind==='expense'?'-':x.kind==='income'?'+':'')+money(x.amount)+'</strong></div>').join('')+'</div>':empty('還沒有記帳紀錄'))+
-        '</section></div>'+
-      (d.cards.length?'<section class="wff-panel"><div class="wff-panel-head"><h2>信用卡未清償淨額</h2><button class="wff-textbtn" data-view="accounts">管理卡片 →</button></div>'+
-        '<div class="wff-cardstrip">'+d.cards.map(c=>'<div class="wff-credit-card"><span>CREDIT CARD ↗</span><strong>'+e(c.name)+'</strong><div>'+money(c.outstanding)+'</div></div>').join('')+'</div></section>':'');
+      (latest.length?'<div class="wff-recent">'+latest.map(x=>'<div class="wff-recent-row"><div class="wff-recent-icon '+(x.kind==='income'?'income':'expense')+'">'+
+        (x.kind==='income'?'↗':x.kind==='transfer'?'↔':'↙')+'</div><div><b>'+e(x.category_name||readable(x.kind))+'</b>'+
+        '<small>'+e(x.occurred_on)+' · '+scopeName(x.scope)+' · '+e(x.note||'無備註')+'</small></div>'+
+        '<strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></div>').join('')+'</div>':
+        empty('尚無交易紀錄'))+'</section></div>'+
+      (cardList.length?'<section class="wff-panel"><div class="wff-panel-head"><h2>信用卡未清償淨額（估算）</h2>'+
+        '<button class="wff-textbtn" data-view="accounts">管理付款工具 →</button></div>'+
+        '<div class="wff-cardstrip">'+cardList.map(c=>'<div class="wff-credit-card"><span>CREDIT CARD / ESTIMATE</span>'+
+        '<strong>'+e(c.name)+'</strong><div>'+money(c.outstanding)+'</div></div>').join('')+'</div>'+
+        '<p class="wff-small">不包含尚未匯入交易、前期帳單、手續費與銀行實際結帳日計算結果。</p></section>':'');
   }
   function empty(message) { return '<div class="wff-empty">✳<p>'+e(message)+'</p></div>'; }
   function transactions() {
