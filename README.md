@@ -12,6 +12,17 @@
 - **資料**：CSV 匯入／匯出（含 Google Sheet A–M 欄位版面匯入支援），所有財務資料僅存在 WordPress
 - **介面**：手機優先 RWD、黑白單色系、襯線字體、清晰線條、零陰影、桌面側邊欄與手機底部導覽、免付費 SaaS 訂閱
 
+## v1.2.2 登入、密碼重設與家庭邀請
+
+- **修正登入無反應**：原全域 submit 監聽器攔截所有表單（包括登入表單），卻未處理其送出；新版只攔截有處理流程的表單，並以專用 REST 驗證登入。
+- **明確登入提示**：登入中狀態、帳密錯誤、逾期、嘗試次數過多及 Cookie/HTTPS 相關排查；保留 admin-post 作為同站備援登入。
+- **專屬密碼流程**：在 Finance 申請重設，接收 Finance 樣式郵件，於 Finance 輸入新密碼；使用 WordPress 核心的安全重設金鑰與驗證機制。
+- **家庭邀請**：使用 HTML 信件（黑白極簡、家庭名稱、權限、到期資訊和按鈕）；登入與加入家庭頁面統一版型，若登入的 Email 不符會提醒切換帳號。
+- **免費新會員**：透過 Finance 註冊後收到同風格的設定密碼郵件，不再寄送跳至 WordPress 藍色頁面的預設註冊信。
+- **不含訂閱**：保留家庭＋公司共享帳目、成員權限、免費自助註冊，無付費方案或第三方訂閱服務。
+
+**部署／測試**：需要 HTTPS、啟用 WordPress REST API 及正常的 SMTP/WordPress 寄信服務。請排除網站首頁（啟用首頁模式時）及 \`/wp-json/wff/v1/*\` 的 Cloudflare、主機與外掛快取。上線前在測試網站驗證：登入、登出、忘記密碼寄信與重設、受邀 Email 建立帳號、已存在帳號加入及 Email 不符提示。本次自動化測試涵蓋語法與流程規則，並不等同實際網站或 SMTP 整合驗收。
+
 ## v1.2.0 網站模式（參考寵物管理 2.25.0）
 
 Finance 現在是完整的 WordPress 網站入口，不需要額外部署 Cloudflare Pages 或掛載短碼才能進入：
@@ -61,9 +72,12 @@ WordPress 6.2+、PHP 7.4+、MySQL / MariaDB（InnoDB）、原生 JavaScript、CS
 - `templates/app.php`：獨立網站入口
 - `includes/class-wff-frontend.php`：首頁模式、獨立登入和免費註冊
 - `includes/class-wff-admin.php`：WordPress 管理控制台與設定
+- `includes/class-wff-mail.php`：統一風格 HTML 邀請信、密碼重設、新用戶設定密碼郵件
 - `assets/css/admin.css`：後台管理介面
 
 ## 版本
+
+v1.2.2 — 修正前台登入表單被 JavaScript 無條件攔截，加入 REST 登入／Cookie 排錯，整合 Finance 忘記密碼、重設頁與 HTML 邀請信及新使用者郵件。
 
 v1.2.1 — 修正新增記帳／編輯記帳表單的左右欄位高度與起始線不一致：標籤固定 22px，輸入／日期／金額／下拉選單固定 52px，移除欄位預設 margin，手機單欄保持相同高度，僅修改表單介面不變動資料庫。
 
