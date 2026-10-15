@@ -375,3 +375,71 @@ body.wff-dialog-open{overflow:hidden}
   #wff-app .wff-invite-summary dl>div{grid-template-columns:1fr;gap:2px}
   #wff-app .wff-invite-summary dd{text-align:left}
 }
+
+
+/* Finance v1.2.3 — monochrome payment tools and data visualizations */
+#wff-app .wff-tool-tabs{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 25px}
+#wff-app .wff-tool-tab{display:flex;align-items:center;gap:11px;padding:10px 16px;background:#fff;color:#111;border:1px solid #111;font-size:13px;min-height:44px}
+#wff-app .wff-tool-tab:hover,#wff-app .wff-tool-tab.active{background:#111;color:#fff}
+#wff-app .wff-tool-tab small{font:11px/1 monospace;opacity:.7}
+#wff-app .wff-tool-card{min-height:245px}
+#wff-app .wff-tool-brand{color:#555;font-size:12px;line-height:1.7}
+#wff-app .wff-tool-card h2{max-width:100%;overflow-wrap:anywhere;margin:12px 0 3px}
+#wff-app .wff-account-details{display:grid;gap:5px;margin:12px 0 19px;border-top:1px solid #ddd;padding-top:12px;font-size:12px;line-height:1.7;color:#333}
+#wff-app .wff-tool-card .wff-textbtn{padding-top:6px}
+#wff-app .wff-tool-hint{display:flex;align-items:center;padding:12px 15px;background:#f5f5f5;border-left:2px solid #111;font-size:12px;line-height:1.8}
+#wff-app .wff-checkline{display:flex!important;align-items:center;gap:9px;padding:5px 0;min-height:38px;font-size:13px}
+#wff-app .wff-checkline input[type="checkbox"]{display:inline-block;width:18px;height:18px;margin:0;accent-color:#111}
+#wff-app .wff-analytics-title{border-bottom:2px solid #111;margin:34px 0 21px;padding:5px 0 17px}
+#wff-app .wff-analytics-title>span{font:11px/1.4 monospace;letter-spacing:.13em;color:#666}
+#wff-app .wff-analytics-title h2{font-size:clamp(22px,3vw,30px);margin:8px 0}
+#wff-app .wff-analytics-title p{margin:0;font-size:12px;color:#666}
+#wff-app .wff-chart-panel{display:flex;flex-direction:column;min-width:0}
+#wff-app .wff-chart-panel .wff-panel-head{flex-wrap:wrap}
+#wff-app .wff-chart-scroll{width:100%;overflow-x:auto;overflow-y:hidden;min-height:180px;-webkit-overflow-scrolling:touch}
+#wff-app .wff-graph{display:block;width:100%;height:auto;min-width:350px;max-height:300px}
+#wff-app .wff-chart-legend{display:flex;flex-wrap:wrap;gap:9px 15px;font-size:11px;line-height:1.6;margin:15px 0 1px}
+#wff-app .wff-chart-legend span{display:inline-flex;align-items:center;gap:6px}
+#wff-app .wff-chart-legend i{width:9px;height:9px;display:inline-block;border:1px solid #111}
+#wff-app .wff-radar{width:min(100%,355px);height:auto;max-height:370px;display:block;margin:0 auto}
+#wff-app .wff-chart-small-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;font-size:11px;line-height:1.65}
+#wff-app .wff-chart-small-list span{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eee;gap:8px;padding:5px 0}
+#wff-app .wff-chart-small-list b{font-weight:700;white-space:nowrap}
+#wff-app .wff-donut-layout{display:grid;grid-template-columns:minmax(155px,230px) minmax(0,1fr);gap:20px;align-items:center}
+#wff-app .wff-donut{position:relative;width:100%;aspect-ratio:1;border-radius:50%;border:1px solid #111;display:grid;place-items:center}
+#wff-app .wff-donut:after{content:"";width:67%;height:67%;position:absolute;inset:16.5%;border-radius:50%;background:#fff;border:1px solid #111}
+#wff-app .wff-donut>span{z-index:1;display:grid;gap:3px;text-align:center;font-size:13px}
+#wff-app .wff-donut strong{font-size:clamp(14px,1.7vw,19px);line-height:1.2;overflow-wrap:anywhere}
+#wff-app .wff-donut small{font-size:11px;color:#666}
+#wff-app .wff-donut-legend{display:grid;gap:4px}
+#wff-app .wff-donut-legend>div{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #eee;font-size:11px}
+#wff-app .wff-donut-legend>div span{width:11px;height:11px;flex:0 0 11px;border:1px solid #111}
+#wff-app .wff-donut-legend>div em{font-style:normal;min-width:0;overflow-wrap:anywhere;flex:1}
+#wff-app .wff-donut-legend>div b{font-weight:700}
+#wff-app .wff-chart-empty{padding:50px 20px;display:grid;place-items:center;text-align:center;min-height:195px;color:#777;font-size:13px;line-height:1.8;border:1px dashed #ddd}
+#wff-app .wff-ranked-bars{display:grid;gap:15px}
+#wff-app .wff-ranked-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 8px;align-items:center;font-size:12px;line-height:1.5}
+#wff-app .wff-ranked-row>span{overflow-wrap:anywhere}
+#wff-app .wff-ranked-row>b{font-weight:700;white-space:nowrap}
+#wff-app .wff-ranked-track{grid-column:1/-1;height:8px;background:#eee}
+#wff-app .wff-ranked-track i{display:block;background:#111;height:100%;max-width:100%}
+#wff-app .wff-metric.wff-metric-text{font-size:18px}
+#wff-app .wff-metric .wff-metric-text{font-size:clamp(17px,2vw,25px)}
+.wff-chart-tooltip{position:fixed;z-index:99999;max-width:240px;padding:10px 13px;color:#fff;background:#111;border:1px solid #111;font:600 12px/1.5 "Noto Sans TC",sans-serif;pointer-events:none;box-shadow:2px 2px 0 #ddd}
+.wff-chart-tooltip[hidden]{display:none}
+#wff-app [data-wff-chart-tip]:focus-visible{outline:2px solid #111;outline-offset:2px}
+@media(max-width:1150px){
+ #wff-app .wff-donut-layout{grid-template-columns:1fr;justify-items:center}
+ #wff-app .wff-donut{max-width:190px}
+ #wff-app .wff-donut-legend{width:100%}
+}
+@media(max-width:520px){
+ #wff-app .wff-tool-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+ #wff-app .wff-tool-tab{justify-content:center;padding:10px 8px}
+ #wff-app .wff-graph{min-width:345px}
+ #wff-app .wff-chart-legend{font-size:10px}
+ #wff-app .wff-donut-layout{grid-template-columns:1fr}
+ #wff-app .wff-donut{max-width:220px}
+ #wff-app .wff-chart-small-list{grid-template-columns:1fr 1fr}
+ #wff-app .wff-tool-card{min-height:210px}
+}
