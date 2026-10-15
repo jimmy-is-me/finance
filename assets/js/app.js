@@ -482,6 +482,53 @@
   function selectValues(items,value) {
     return items.map(([key,title])=>'<option value="'+key+'" '+(String(value)===key?'selected':'')+'>'+title+'</option>').join('');
   }
+  // Transaction payment selection only replaces the dependent fields.
+  // All metadata is already fetched; changing methods requires no AJAX/refetch.
+  function transactionFields(d) {
+    const scope=d.scope||'family',kind=d.kind||'expense',method=d.payment_method||'cash';
+    const transfer=kind==='transfer';
+    const cats=(S.meta?.categories||[]).filter(c=>c.scope===scope&&c.kind===kind);
+    const all=S.meta?.accounts||[];
+    const types=transfer||method==='mobile'?['cash','bank','credit']:
+      ({cash:['cash'],card:['credit'],bank:['bank'],other:['cash','bank','credit']})[method]||['cash','bank','credit'];
+    const sources=all.filter(a=>types.includes(a.type)&&(Number(a.enabled)!==0||String(a.id)===String(d.account_id)));
+    const targets=all.filter(a=>['cash','bank','credit'].includes(a.type)&&
+      (Number(a.enabled)!==0||String(a.id)===String(d.destination_account_id)));
+    const wallets=all.filter(a=>a.type==='mobile'&&(Number(a.enabled)!==0||String(a.id)===String(d.payment_channel_id)));
+    const chosen=cats.find(c=>String(c.id)===String(d.category_id));
+    const categorySelect='<select name="category_id" required style="--wff-category-color:'+categoryColor(chosen?.color)+'">'+
+      '<option value="">請選擇分類</option>'+cats.map(c=>
+      '<option value="'+e(c.id)+'" '+(String(d.category_id||'')===String(c.id)?'selected':'')+
+      ' style="background-color:'+categoryColor(c.color)+'">'+e(c.name)+'</option>').join('')+'</select>';
+    return (transfer?'<div class="wff-note">轉帳或信用卡還款不會重複計入收支。</div>':field('分類',categorySelect))+
+      (method==='mobile'&&!transfer?field('使用的行動支付','<select name="payment_channel_id" required>'+
+       options(wallets,d.payment_channel_id,'選擇 LINE Pay、Apple Pay 等')+'</select>'):'')+
+      '<div class="wff-form-grid">'+field(transfer?'轉出帳戶':method==='mobile'?'實際扣款來源':'付款／收款工具',
+       '<select name="account_id">'+options(sources,d.account_id,
+         transfer?'請選擇轉出帳戶':method==='mobile'?'扣款來源未指定':'選擇付款工具（選填）')+'</select>')+
+      (transfer?field('轉入帳戶／信用卡','<select name="destination_account_id" required>'+
+        options(targets,d.destination_account_id,'選擇轉入帳戶或信用卡')+'</select>'):
+        '<div class="wff-tool-hint">'+(method==='mobile'?'行動支付及扣款卡片同時記錄，但支出只計算一次。':
+        '可至付款工具新增常用卡片。')+'</div>')+'</div>';
+  }
+  function refreshTransactionFields(form,changed) {
+    const data=getFormData(form);
+    if(changed==='scope'||changed==='kind')data.category_id='';
+    if(changed==='payment_method'){data.payment_channel_id='';data.account_id='';}
+    if(changed==='payment_channel_id'){
+      const wallet=(S.meta?.accounts||[]).find(a=>String(a.id)===String(data.payment_channel_id));
+      data.account_id=wallet?.funding_account_id||'';
+    }
+    const block=form.querySelector('#wff-transaction-dynamic');
+    if(block)block.innerHTML=transactionFields(data);
+    const payment=form.querySelector('[data-transaction-method]');
+    if(payment)payment.hidden=data.kind==='transfer';
+  }
+  function updateCategorySelect(form) {
+    const sel=form.querySelector('[name="category_id"]');
+    if(sel)sel.style.setProperty('--wff-category-color',categoryColor(categoryById(sel.value)?.color));
+  }
+
   function modal() {
     if (!S.modal) return '';
     const type=S.modal, d=S.draft;
