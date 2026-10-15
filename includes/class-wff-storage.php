@@ -25,6 +25,7 @@ final class WFF_Storage {
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             name varchar(120) NOT NULL,
             owner_user_id bigint(20) unsigned NOT NULL,
+            member_limit int(11) NOT NULL DEFAULT 5,
             created_at datetime NOT NULL,
             PRIMARY KEY  (id),
             KEY owner_user_id (owner_user_id)
