@@ -24,7 +24,7 @@ jobs:
       - name: Check JavaScript syntax
         run: node --check assets/js/app.js
       - name: Test responsive monochrome design contract
-        run: node --test tests/ui-contract.test.mjs
+        run: node --test tests/*.test.mjs
       - name: Package installable plugin ZIP
         run: |
           mkdir -p dist staging/wumetax-finance
