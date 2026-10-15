@@ -578,3 +578,49 @@ body.wff-dialog-open{overflow:hidden}
  #wff-app .wff-modal{width:100%;padding:18px;max-height:calc(100dvh - 24px)}
  #wff-app .wff-tablewrap{margin-inline:0}
 }
+
+
+/* v1.2.6 — Loan records; same minimal black/white Finance design. */
+#wff-app .wff-loan-metrics{margin-bottom:24px}
+#wff-app .wff-loan-toolbar{display:flex;align-items:end;justify-content:space-between;flex-wrap:wrap;gap:14px;margin:0 0 18px}
+#wff-app .wff-loan-toolbar label{display:grid;gap:9px;min-width:190px;font-size:13px}
+#wff-app .wff-loan-toolbar select{height:52px;min-height:52px;border:1px solid #111;background:#fff;border-radius:0;padding:10px 14px}
+#wff-app .wff-loan-toolbar .wff-small{max-width:500px;line-height:1.8}
+#wff-app .wff-loan-card{margin:0 0 21px;min-width:0}
+#wff-app .wff-loan-head{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding-bottom:19px;border-bottom:2px solid #111}
+#wff-app .wff-loan-head h2{font-size:clamp(20px,2vw,27px);margin:7px 0;line-height:1.4;overflow-wrap:anywhere}
+#wff-app .wff-loan-head p{font-size:13px;color:#666;margin:0;line-height:1.7}
+#wff-app .wff-loan-head .wff-button{min-width:110px}
+#wff-app .wff-loan-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid #ddd;margin:22px 0}
+#wff-app .wff-loan-stats>div{padding:16px 13px;border-right:1px solid #ddd;display:grid;gap:10px;min-width:0}
+#wff-app .wff-loan-stats>div:last-child{border-right:0}
+#wff-app .wff-loan-stats small{font-size:11px;color:#666}
+#wff-app .wff-loan-stats strong{font-size:clamp(15px,1.6vw,20px);line-height:1.4;font-weight:650;overflow-wrap:anywhere}
+#wff-app .wff-loan-warning{margin:0 0 20px!important;background:#fff;border-left:4px solid #111}
+#wff-app .wff-loan-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:28px 0 10px}
+#wff-app .wff-loan-section-title h3{font-size:18px;margin:0}
+#wff-app .wff-loan-section-title span{font-size:12px;color:#666}
+#wff-app .wff-loan-table{min-width:760px;width:100%;border-collapse:collapse}
+#wff-app .wff-loan-table th,#wff-app .wff-loan-table td{padding:12px 10px;text-align:left;border-bottom:1px solid #ddd;font-size:12px;line-height:1.6}
+#wff-app .wff-loan-table th{font-weight:700;border-bottom:2px solid #111;white-space:nowrap}
+#wff-app .wff-loan-table td:nth-last-child(1){min-width:150px}
+#wff-app .wff-loan-table td small{display:block;color:#666;margin-top:3px}
+#wff-app .wff-loan-pay-btn{min-height:36px;font-size:11px;padding:8px 10px;margin:3px 8px 3px 0}
+#wff-app .wff-loan-state{font-size:11px;border:1px solid #111;display:inline-block;padding:5px 8px;white-space:nowrap}
+#wff-app .wff-loan-state-paid{background:#111;color:#fff}
+#wff-app .wff-loan-state-overdue{border-style:dashed;font-weight:700}
+#wff-app .wff-loan-state-partial{background:#ededed}
+#wff-app .wff-loan-expand{margin-top:16px;font-size:12px}
+#wff-app .wff-loan-card>.wff-small{margin:16px 0 0;line-height:1.85}
+#wff-app .wff-modal .wff-form .wff-note{line-height:1.8;font-size:12px}
+@media(max-width:960px){
+ #wff-app .wff-loan-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #wff-app .wff-loan-stats>div:nth-child(2){border-right:0}
+ #wff-app .wff-loan-stats>div:nth-child(-n+2){border-bottom:1px solid #ddd}
+}
+@media(max-width:520px){
+ #wff-app .wff-loan-toolbar label{width:100%}
+ #wff-app .wff-loan-head .wff-button{width:100%}
+ #wff-app .wff-loan-stats>div{padding:13px 10px}
+ #wff-app .wff-loan-stats strong{font-size:15px}
+}
