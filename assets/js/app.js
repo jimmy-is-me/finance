@@ -404,16 +404,30 @@
   function categories() {
     const cats=S.meta.categories||[];
     const groups=[['family','expense','家庭支出'],['family','income','家庭收入'],['business','income','公司收入'],['business','expense','公司支出']];
+    const canSort=canEdit();
     return '<div class="wff-pagehead"><div><div class="wff-kicker">CATEGORIES / TAGS</div>'+
-      '<h1>分類 <span class="wff-highlight">管理</span></h1><p>自己決定分類名稱與顏色，保持每一筆收支整齊。</p></div>'+
-      (canEdit()?simpleBtn('＋ 新增分類','new-category','wff-primary'):'')+'</div>'+
-      '<div class="wff-two">'+groups.map(([scope,kind,name])=>'<section class="wff-panel"><div class="wff-panel-head"><h2>'+name+'</h2>'+
-        '<span class="wff-pill yellow">'+cats.filter(x=>x.scope===scope&&x.kind===kind).length+' 種</span></div>'+
-        '<div class="wff-taglist">'+cats.filter(x=>x.scope===scope&&x.kind===kind).map(x=>
-          '<span class="wff-tag" style="--tag:'+e(x.color)+'"><i></i>'+e(x.name)+
-          (canEdit()?'<button type="button" data-action="edit-category" data-id="'+e(x.id)+'" aria-label="編輯 '+e(x.name)+'">✎</button>'+
-            '<button type="button" data-action="delete-category" data-id="'+e(x.id)+'" aria-label="刪除 '+e(x.name)+'">×</button>':'')+'</span>').join('')+
-        '</div></section>').join('')+'</div>';
+      '<h1>分類 <span class="wff-highlight">管理</span></h1>'+
+      '<p>可拖曳調整順序，手機也能使用 ↑ ↓ 按鈕。排序會同步到新增記帳的分類選單。</p></div>'+
+      (canSort?simpleBtn('＋ 新增分類','new-category','wff-primary'):'')+'</div>'+
+      '<div class="wff-two">'+groups.map(([scope,kind,name])=>{
+        const items=cats.filter(x=>x.scope===scope&&x.kind===kind);
+        return '<section class="wff-panel wff-category-panel"><div class="wff-panel-head"><h2>'+name+'</h2>'+
+          '<span class="wff-pill yellow">'+items.length+' 種</span></div>'+
+          '<div class="wff-category-sort-list" role="list" data-sort-group="'+scope+'-'+kind+'" data-sort-scope="'+scope+
+          '" data-sort-kind="'+kind+'">'+items.map((x,i)=>
+            '<div class="wff-category-sort-item" role="listitem" data-category-row="'+e(x.id)+'" '+
+            (canSort?'draggable="true" ':'')+'>'+
+              (canSort?'<span class="wff-sort-grip" title="拖曳分類排序" aria-hidden="true">⠿</span>':'')+
+              '<span class="wff-category-sort-name">'+e(x.name)+'</span>'+
+              (canSort?'<span class="wff-category-sort-actions">'+
+                '<button type="button" data-action="category-up" data-id="'+e(x.id)+'" title="向上移動 '+e(x.name)+'" aria-label="向上移動 '+e(x.name)+'" '+(i===0?'disabled':'')+'>↑</button>'+
+                '<button type="button" data-action="category-down" data-id="'+e(x.id)+'" title="向下移動 '+e(x.name)+'" aria-label="向下移動 '+e(x.name)+'" '+(i===items.length-1?'disabled':'')+'>↓</button>'+
+                '<button type="button" data-action="edit-category" data-id="'+e(x.id)+'" title="編輯 '+e(x.name)+'" aria-label="編輯 '+e(x.name)+'">✎</button>'+
+                '<button type="button" data-action="delete-category" data-id="'+e(x.id)+'" title="刪除 '+e(x.name)+'" aria-label="刪除 '+e(x.name)+'">×</button></span>':'')+
+              '</div>').join('')+'</div>'+
+          (canSort?'<p class="wff-category-hint">⠿ 拖曳排序 · ↑ ↓ 移動 · 自動儲存</p>':'')+
+          '</section>';
+      }).join('')+'</div>';
   }
   function members() {
     return '<div class="wff-pagehead"><div><div class="wff-kicker">TOGETHER / FAMILY</div>'+
@@ -589,6 +603,69 @@
     a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     show('已產生 CSV 備份，共 '+response.total+' 筆');
   }
+  function categoryIds(group) {
+    return [...group.querySelectorAll('[data-category-row]')].map(x=>Number(x.dataset.categoryRow));
+  }
+  function persistCategoryOrder(group, ids) {
+    if(!group || !canEdit() || S.busy) return;
+    const scope=group.dataset.sortScope,kind=group.dataset.sortKind;
+    attempt(async()=>{
+      // Backend checks the entire group and rejects IDs from other households.
+      await request(path('categories/reorder'),'PUT',{scope,kind,ids});
+      await reload();
+      show('分類順序已儲存');
+    });
+  }
+  function moveCategory(id,direction) {
+    const card=root.querySelector('[data-category-row="'+id+'"]');
+    const group=card?.closest('[data-sort-group]');
+    if(!group) return;
+    const ids=categoryIds(group),index=ids.indexOf(id),other=index+direction;
+    if(index<0||other<0||other>=ids.length) return;
+    [ids[index],ids[other]]=[ids[other],ids[index]];
+    persistCategoryOrder(group,ids);
+  }
+  let draggedCategory=null;
+  root.addEventListener('dragstart',ev=>{
+    const card=ev.target.closest('[data-category-row]');
+    if(!card||!canEdit()||S.busy||ev.target.closest('button')) return;
+    const group=card.closest('[data-sort-group]');
+    if(!group)return;
+    draggedCategory={id:Number(card.dataset.categoryRow),group:group.dataset.sortGroup};
+    card.classList.add('wff-sorting');
+    if(ev.dataTransfer){ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',String(draggedCategory.id));}
+  });
+  root.addEventListener('dragover',ev=>{
+    if(!draggedCategory)return;
+    const row=ev.target.closest('[data-category-row]');
+    const group=(row||ev.target).closest?.('[data-sort-group]');
+    if(!group || group.dataset.sortGroup!==draggedCategory.group)return;
+    ev.preventDefault();
+    if(ev.dataTransfer)ev.dataTransfer.dropEffect='move';
+    root.querySelectorAll('.wff-sort-target').forEach(x=>x.classList.remove('wff-sort-target'));
+    if(row&&Number(row.dataset.categoryRow)!==draggedCategory.id)row.classList.add('wff-sort-target');
+  });
+  root.addEventListener('drop',ev=>{
+    if(!draggedCategory)return;
+    const group=ev.target.closest('[data-sort-group]');
+    if(!group||group.dataset.sortGroup!==draggedCategory.group)return;
+    ev.preventDefault();
+    const ids=categoryIds(group),id=draggedCategory.id;
+    const target=ev.target.closest('[data-category-row]');
+    const filtered=ids.filter(x=>x!==id);
+    if(target&&Number(target.dataset.categoryRow)!==id){
+      const insertAt=filtered.indexOf(Number(target.dataset.categoryRow));
+      const middle=target.getBoundingClientRect().top+target.getBoundingClientRect().height/2;
+      filtered.splice(insertAt+(ev.clientY>middle?1:0),0,id);
+    }else if(!target){filtered.push(id);}else{filtered.splice(ids.indexOf(id),0,id);}
+    draggedCategory=null;
+    root.querySelectorAll('.wff-sort-target,.wff-sorting').forEach(x=>x.classList.remove('wff-sort-target','wff-sorting'));
+    if(filtered.some((x,i)=>x!==ids[i]))persistCategoryOrder(group,filtered);
+  });
+  root.addEventListener('dragend',()=>{
+    draggedCategory=null;
+    root.querySelectorAll('.wff-sort-target,.wff-sorting').forEach(x=>x.classList.remove('wff-sort-target','wff-sorting'));
+  });
   root.addEventListener('click',ev=>{
     const target=ev.target.closest('[data-action],[data-view]');
     if (!target) return;
@@ -609,6 +686,8 @@
       attempt(async()=>{await request(path('transactions/'+id),'DELETE');await reload();show('已刪除交易');});
     }
     if(act==='new-category'){openModal('category');}
+    if(act==='category-up'){moveCategory(id,-1);}
+    if(act==='category-down'){moveCategory(id,1);}
     if(act==='edit-category'){openModal('category',S.meta.categories.find(x=>Number(x.id)===id));}
     if(act==='delete-category'&&confirm('確定刪除此分類？已使用的分類無法刪除。')) {
       attempt(async()=>{await request(path('categories/'+id),'DELETE');await reload();show('已刪除分類');});
