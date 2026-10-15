@@ -16,6 +16,7 @@ final class WFF_API {
         self::route('/households/(?P<hid>\d+)/transactions/(?P<id>\d+)', 'PUT', 'save_transaction', $a);
         self::route('/households/(?P<hid>\d+)/transactions/(?P<id>\d+)', 'DELETE', 'delete_transaction', $a);
         self::route('/households/(?P<hid>\d+)/categories', 'POST', 'save_category', $a);
+        self::route('/households/(?P<hid>\d+)/categories/reorder', 'PUT', 'reorder_categories', $a);
         self::route('/households/(?P<hid>\d+)/categories/(?P<id>\d+)', 'PUT', 'save_category', $a);
         self::route('/households/(?P<hid>\d+)/categories/(?P<id>\d+)', 'DELETE', 'delete_category', $a);
         self::route('/households/(?P<hid>\d+)/accounts', 'POST', 'save_account', $a);
@@ -145,7 +146,7 @@ final class WFF_API {
         $users = $wpdb->users;
         return array(
             'role' => $role,
-            'categories' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $c WHERE household_id=%d ORDER BY scope,kind,id", $hid), ARRAY_A),
+            'categories' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $c WHERE household_id=%d ORDER BY scope,kind,sort_order ASC,id ASC", $hid), ARRAY_A),
             'accounts' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $a WHERE household_id=%d ORDER BY sort_order,id", $hid), ARRAY_A),
             'members' => $wpdb->get_results($wpdb->prepare(
                 "SELECT m.user_id,m.role,m.joined_at,u.display_name,u.user_email FROM $m m INNER JOIN $users u ON u.ID=m.user_id WHERE m.household_id=%d ORDER BY FIELD(m.role,'owner','editor','viewer'),u.display_name", $hid
@@ -338,8 +339,22 @@ final class WFF_API {
         $c = WFF_Storage::table('categories');
         $id = (int) $r->get_param('id');
         $data = array('name' => $name, 'scope' => $scope, 'kind' => $kind, 'color' => $color);
+        $current = null;
         if ($id) {
-            if (!$wpdb->get_var($wpdb->prepare("SELECT id FROM $c WHERE id=%d AND household_id=%d", $id, $hid))) { return self::error('找不到分類',404); }
+            $current = $wpdb->get_row($wpdb->prepare(
+                "SELECT id,scope,kind,sort_order FROM $c WHERE id=%d AND household_id=%d", $id, $hid
+            ), ARRAY_A);
+            if (!$current) { return self::error('找不到分類',404); }
+        }
+        // Position is server-owned; new and moved categories appear at the end of their group.
+        if (!$current || $current['scope'] !== $scope || $current['kind'] !== $kind) {
+            $last = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT MAX(sort_order) FROM $c WHERE household_id=%d AND scope=%s AND kind=%s",
+                $hid, $scope, $kind
+            ));
+            $data['sort_order'] = $last + 10;
+        }
+        if ($id) {
             $ok = $wpdb->update($c, $data, array('id' => $id, 'household_id' => $hid));
         } else {
             $data['household_id'] = $hid;
@@ -350,6 +365,66 @@ final class WFF_API {
         if ($ok === false) { return self::error('儲存分類失敗，名稱可能重複'); }
         WFF_Storage::activity($hid, 'save_category', $id);
         return array('saved' => true, 'id' => $id);
+    }
+
+
+    /**
+     * Atomic, scoped ordering. Only an editor may reorder the full membership
+     * of one family/company income/expense group. Never accept sort_order
+     * offsets from the browser or change IDs belonging to other households.
+     */
+    public static function reorder_categories($r) {
+        global $wpdb;
+        $hid = (int) $r['hid'];
+        $role = self::role($hid, 'editor');
+        if (is_wp_error($role)) { return $role; }
+        $scope = self::clean_scope($r->get_param('scope'));
+        $kind = sanitize_key($r->get_param('kind'));
+        if (!$scope || !in_array($kind, array('income','expense'), true)) {
+            return self::error('排序分類群組不正確');
+        }
+        $ids = $r->get_param('ids');
+        if (!is_array($ids) || count($ids) > 500) {
+            return self::error('排序資料格式錯誤或分類數量過多');
+        }
+        // Reject negative, zero, duplicate, or non-integer IDs.
+        $ordered = array();
+        foreach ($ids as $raw) {
+            if (!is_scalar($raw) || !ctype_digit((string)$raw) || (int)$raw <= 0) {
+                return self::error('排序 ID 不正確');
+            }
+            $ordered[] = (int)$raw;
+        }
+        if (count($ordered) !== count(array_unique($ordered))) {
+            return self::error('排序 ID 不可重複');
+        }
+        $c = WFF_Storage::table('categories');
+        $existing = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM $c WHERE household_id=%d AND scope=%s AND kind=%s ORDER BY sort_order,id",
+            $hid, $scope, $kind
+        ));
+        // Require a complete permutation. Avoid dropping newly-added categories
+        // when two members edit the same group at the same time.
+        $expect = array_map('intval', $existing);
+        $test = $ordered;
+        sort($expect, SORT_NUMERIC);
+        sort($test, SORT_NUMERIC);
+        if ($test !== $expect) {
+            return self::error('分類資料已變更，請重新整理後再排序', 409);
+        }
+        $wpdb->query('START TRANSACTION');
+        foreach ($ordered as $i => $id) {
+            $result = $wpdb->update($c, array('sort_order'=>($i+1)*10), array(
+                'id'=>$id,'household_id'=>$hid,'scope'=>$scope,'kind'=>$kind
+            ), array('%d'), array('%d','%d','%s','%s'));
+            if ($result === false) {
+                $wpdb->query('ROLLBACK');
+                return self::error('排序儲存失敗，請稍後再試', 500);
+            }
+        }
+        $wpdb->query('COMMIT');
+        WFF_Storage::activity($hid, 'reorder_categories', 0, $scope . '/' . $kind);
+        return array('saved'=>true,'ids'=>$ordered);
     }
 
     public static function delete_category($r) {
