@@ -687,7 +687,8 @@ final class WFF_API {
                 $out[]=array('occurred_on'=>$date,'scope'=>$scope,'kind'=>$kind,
                     'category'=>trim($lookup['分類']??''),'amount'=>$amount,
                     'note'=>trim($lookup['備註']??''),'payment_method'=>trim($lookup['付款方式']??'cash'),
-                    'account'=>trim($lookup['帳戶']??''),'destination_account'=>trim($lookup['轉入帳戶']??''));
+                    'account'=>trim($lookup['帳戶']??''),'destination_account'=>trim($lookup['轉入帳戶']??''),
+                    'payment_channel'=>trim($lookup['付款通路']??''));
             }
             if (count($errors)>25) { break; }
         }
@@ -739,13 +740,26 @@ final class WFF_API {
                     if ($target==='account_id') { $account_id=(int)$found; } else { $destination_id=(int)$found; }
                 }
             }
+            $channel_id=null;
+            if (!empty($item['payment_channel'])) {
+                $wallet=$wpdb->get_row($wpdb->prepare(
+                    "SELECT id,type FROM $a WHERE household_id=%d AND name=%s",
+                    $hid,$item['payment_channel']
+                ),ARRAY_A);
+                if (!$wallet || $wallet['type']!=='mobile') {
+                    $wpdb->query('ROLLBACK');
+                    return self::error('找不到行動支付工具：'.$item['payment_channel']);
+                }
+                $channel_id=(int)$wallet['id'];
+            }
             $cat=$item['kind']==='transfer'?null:self::find_category($hid,$item);
             if ($item['kind']!=='transfer' && !$cat) { $wpdb->query('ROLLBACK'); return self::error('分類寫入失敗',500); }
             $ok=$wpdb->insert($t,array(
                 'household_id'=>$hid,'occurred_on'=>$item['occurred_on'],'scope'=>$item['scope'],'kind'=>$item['kind'],
                 'category_id'=>$cat,'amount'=>$item['amount'],'note'=>mb_substr(sanitize_text_field($item['note']),0,255),
-                'payment_method'=>in_array($item['payment_method'],array('cash','bank','card','other'),true)?$item['payment_method']:'other',
+                'payment_method'=>in_array($item['payment_method'],array('cash','bank','card','mobile','other'),true)?$item['payment_method']:'other',
                 'account_id'=>$account_id,'destination_account_id'=>$destination_id,
+                'payment_channel_id'=>$channel_id,
                 'created_by'=>get_current_user_id(),'created_at'=>current_time('mysql',true),'updated_at'=>current_time('mysql',true)
             ));
             if (!$ok) { $wpdb->query('ROLLBACK'); return self::error('交易匯入失敗，已取消本次匯入',500); }
@@ -768,7 +782,8 @@ final class WFF_API {
                 '日期'=>$row['occurred_on'],'範圍'=>$row['scope'],'類型'=>$row['kind'],
                 '分類'=>$row['category_name']??'','金額'=>$row['amount'],
                 '備註'=>$row['note'],'付款方式'=>$row['payment_method'],
-                '帳戶'=>$row['account_name']??'','轉入帳戶'=>$row['destination_account_name']??''
+                '帳戶'=>$row['account_name']??'','轉入帳戶'=>$row['destination_account_name']??'',
+                '付款通路'=>$row['payment_channel_name']??''
             );
         }
         return array('items'=>$out,'total'=>count($out));
