@@ -209,9 +209,11 @@ final class WFF_API {
         if (is_wp_error($role)) { return $role; }
         $t = WFF_Storage::table('transactions');
         $id = (int) $r->get_param('id');
-        if ($id && !$wpdb->get_var($wpdb->prepare("SELECT id FROM $t WHERE id=%d AND household_id=%d", $id, $hid))) {
-            return self::error('找不到此交易', 404);
-        }
+        $original_tx = $id ? $wpdb->get_row($wpdb->prepare(
+            "SELECT id,payment_method,account_id,destination_account_id,payment_channel_id,kind
+             FROM $t WHERE id=%d AND household_id=%d", $id, $hid
+        ), ARRAY_A) : null;
+        if ($id && !$original_tx) { return self::error('找不到此交易', 404); }
         $date = self::date($r->get_param('occurred_on'));
         $scope = self::clean_scope($r->get_param('scope'));
         $kind = sanitize_key($r->get_param('kind'));
@@ -234,7 +236,12 @@ final class WFF_API {
             return self::error('帳戶不屬於此家庭');
         }
         if ($kind === 'transfer' && (!$account || !$dest || $account === $dest)) {
-            return self::error('轉帳請選擇不同的來源帳戶與轉入帳戶');
+            // Old Google Sheet credit-bill rows were imported as transfers
+            // with no selected accounts. Preserve them for note/date edits.
+            $grandfathered = $original_tx && $original_tx['kind']==='transfer'
+                && !$original_tx['account_id'] && !$original_tx['destination_account_id']
+                && !$account && !$dest;
+            if (!$grandfathered) { return self::error('轉帳請選擇不同的來源帳戶與轉入帳戶'); }
         }
         $pay = sanitize_key($r->get_param('payment_method') ?: 'cash');
         if (!in_array($pay, array('cash','bank','card','mobile','other'), true)) {
@@ -269,7 +276,13 @@ final class WFF_API {
                     ));
                     $expected = array('card'=>'credit','cash'=>'cash','bank'=>'bank');
                     if (isset($expected[$pay]) && $source_type !== $expected[$pay]) {
-                        return self::error('選擇的付款工具與付款類型不符');
+                        $is_legacy_unchanged = $original_tx
+                            && $original_tx['payment_method'] === $pay
+                            && (int)$original_tx['account_id'] === (int)$account
+                            && !$original_tx['payment_channel_id'];
+                        if (!$is_legacy_unchanged) {
+                            return self::error('選擇的付款工具與付款類型不符');
+                        }
                     }
                 }
             }
