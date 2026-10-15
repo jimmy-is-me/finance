@@ -26,6 +26,9 @@
   const icon = (s) => '<span class="wff-symbol" aria-hidden="true">' + e(s) + '</span>';
   const isOwner = () => S.meta?.role === 'owner';
   const canEdit = () => ['owner','editor'].includes(S.meta?.role);
+  const categoryColor = value => /^#[0-9a-f]{6}$/i.test(String(value||'')) ? value : '#c8c8c8';
+  const categoryChip = (name,color) => '<span class="wff-category-chip" style="--wff-category-color:'+categoryColor(color)+'"><span class="wff-category-dot"></span>'+e(name||'未分類')+'</span>';
+  const categoryById = id => (S.meta?.categories||[]).find(x=>Number(x.id)===Number(id));
   const current = () => S.households.find(h => Number(h.id) === Number(S.hid));
   function show(message) {
     S.notice = message;
@@ -84,7 +87,7 @@
     return '<section class="wff-auth"><div class="wff-auth-card wff-auth-flow">'+
       '<div class="wff-kicker">WUMETAX / FINANCE · '+e(eyebrow)+'</div>'+
       '<h1>'+heading+'</h1><p>'+e(description)+'</p>'+contents+
-      '<div class="wff-auth-foot">FAMILY FINANCE · PRIVATE DATA · NO SUBSCRIPTION</div>'+
+      '<div class="wff-auth-foot">© WUMETAX FINANCE</div>'+
       '</div></section>';
   }
   function authAlert(message, error = false) {
@@ -245,7 +248,7 @@
       '<main class="wff-content" id="wff-main" tabindex="-1">'+(S.notice?'<div class="wff-alert" role="status">'+e(S.notice)+'</div>':'');
   }
   function footer() {
-    return '</main><footer class="wff-footer">© WUMETAX FINANCE · 私有財務資料儲存在 WordPress</footer></div></div>'+
+    return '</main><footer class="wff-footer">© WUMETAX FINANCE</footer></div></div>'+
       '<nav class="wff-mobile-bottom" aria-label="手機快速導覽">'+
       [['dashboard','總覽','⌂'],['transactions','記帳','≡'],['accounts','付款','▣'],['members','家庭','♧']]
         .map(([key,name,symbol])=>'<button type="button" data-view="'+key+'" class="'+(S.view===key?'active':'')+'" aria-current="'+(S.view===key?'page':'false')+'"><span aria-hidden="true">'+symbol+'</span>'+name+'</button>').join('')+
@@ -328,7 +331,7 @@
       '<section class="wff-panel"><div class="wff-panel-head"><h2>最近交易</h2><button class="wff-textbtn" data-view="transactions">查看全部 →</button></div>'+
       (latest.length?'<div class="wff-recent">'+latest.map(x=>'<div class="wff-recent-row"><div class="wff-recent-icon '+(x.kind==='income'?'income':'expense')+'">'+
         (x.kind==='income'?'↗':x.kind==='transfer'?'↔':'↙')+'</div><div><b>'+e(x.category_name||readable(x.kind))+'</b>'+
-        '<small>'+e(x.occurred_on)+' · '+scopeName(x.scope)+' · '+e(x.note||'無備註')+'</small></div>'+
+        '<small>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'　'+e(x.occurred_on)+' · '+scopeName(x.scope)+' · '+e(x.note||'無備註')+'</small></div>'+
         '<strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></div>').join('')+'</div>':
         empty('尚無交易紀錄'))+'</section></div>'+
       (cardList.length?'<section class="wff-panel"><div class="wff-panel-head"><h2>信用卡未清償淨額（估算）</h2>'+
@@ -352,12 +355,13 @@
       (d.items.length?'<div class="wff-tablewrap"><table class="wff-transactions"><thead><tr>'+
         '<th>日期</th><th>類型</th><th>分類／備註</th><th>帳戶</th><th>記帳人</th><th>金額</th>'+(canEdit()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
         d.items.map(x=>'<tr><td>'+e(x.occurred_on)+'</td><td><span class="wff-pill '+(x.kind==='income'?'mint':x.kind==='expense'?'pink':'violet')+'">'+scopeName(x.scope)+' · '+readable(x.kind)+'</span></td>'+
-          '<td><b>'+e(x.category_name||readable(x.kind))+'</b><small>'+e(x.note||'—')+'</small></td>'+
+          '<td>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'<small>'+e(x.note||'—')+'</small></td>'+
           '<td>'+e(x.payment_channel_name ? x.payment_channel_name+' · '+(x.account_name||'扣款來源未指定') : (x.account_name||'—'))+(x.destination_account_name?' → '+e(x.destination_account_name):'')+'</td>'+
           '<td>'+e(x.creator_name||'—')+'</td>'+
           '<td><strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></td>'+
           (canEdit()?'<td><button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
-            '<button class="wff-iconbutton" aria-label="刪除" data-action="delete-transaction" data-id="'+e(x.id)+'">×</button></td>':'')+'</tr>').join('')+
+            '<button class="wff-iconbutton" aria-label="複製此記帳，建立新的一筆" title="複製記帳" data-action="duplicate-transaction" data-id="'+e(x.id)+'">⧉</button>'+ 
+             '<button class="wff-iconbutton" aria-label="刪除" data-action="delete-transaction" data-id="'+e(x.id)+'">×</button></td>':'')+'</tr>').join('')+
         '</tbody></table></div>':empty('找不到符合條件的交易'))+
       '<div class="wff-pagination"><button class="wff-button" data-action="page-prev" '+(d.page<=1?'disabled':'')+'>← 上一頁</button>'+
         '<span>'+e(d.page)+' / '+e(d.pages)+' 頁</span>'+
@@ -418,7 +422,7 @@
             '<div class="wff-category-sort-item" role="listitem" data-category-row="'+e(x.id)+'" '+
             (canSort?'draggable="true" ':'')+'>'+
               (canSort?'<span class="wff-sort-grip" title="拖曳分類排序" aria-hidden="true">⠿</span>':'')+
-              '<span class="wff-category-sort-name">'+e(x.name)+'</span>'+
+              '<span class="wff-category-sort-name">'+categoryChip(x.name,x.color)+'</span>'+
               (canSort?'<span class="wff-category-sort-actions">'+
                 '<button type="button" data-action="category-up" data-id="'+e(x.id)+'" title="向上移動 '+e(x.name)+'" aria-label="向上移動 '+e(x.name)+'" '+(i===0?'disabled':'')+'>↑</button>'+
                 '<button type="button" data-action="category-down" data-id="'+e(x.id)+'" title="向下移動 '+e(x.name)+'" aria-label="向下移動 '+e(x.name)+'" '+(i===items.length-1?'disabled':'')+'>↓</button>'+
@@ -432,9 +436,9 @@
   function members() {
     return '<div class="wff-pagehead"><div><div class="wff-kicker">TOGETHER / FAMILY</div>'+
       '<h1>家庭 <span class="wff-highlight">成員</span></h1><p>家庭和公司收支皆為共用資料，依成員權限允許檢視或編輯。</p></div>'+
-      (isOwner()?simpleBtn('＋ 邀請成員','new-invite','wff-primary'):'')+'</div>'+
+      (isOwner()&&S.meta.members.length<Number(S.meta.member_limit||5)?simpleBtn('＋ 邀請成員','new-invite','wff-primary'):'')+'</div>'+
       '<section class="wff-panel"><div class="wff-panel-head"><h2>家庭成員</h2><span class="wff-pill violet">'+S.meta.members.length+' 位</span></div>'+
-      '<div class="wff-members">'+S.meta.members.map(x=>'<div class="wff-member"><div class="wff-member-avatar">'+e(x.display_name.slice(0,1))+'</div>'+
+      '<p class="wff-member-capacity">已使用 '+S.meta.members.length+' / '+e(S.meta.member_limit||5)+' 位名額（包含家庭管理員）'+(S.meta.members.length>=Number(S.meta.member_limit||5)?' · 已達上限，請聯絡網站管理員開通':'')+'</p><div class="wff-members">'+S.meta.members.map(x=>'<div class="wff-member"><div class="wff-member-avatar">'+e(x.display_name.slice(0,1))+'</div>'+
         '<div class="wff-member-info"><b>'+e(x.display_name)+'</b><small>'+e(x.user_email)+'</small></div>'+
         (isOwner()&&x.role!=='owner'?'<select aria-label="成員權限" data-member-role="'+e(x.user_id)+'"><option value="editor" '+(x.role==='editor'?'selected':'')+'>可編輯</option>'+
           '<option value="viewer" '+(x.role==='viewer'?'selected':'')+'>僅檢視</option></select>'+
@@ -682,6 +686,12 @@
     if(act==='close-modal'){ resetModal(); }
     if(act==='new-transaction'){openModal('transaction',{scope:'family',kind:'expense'});}
     if(act==='edit-transaction'&&item){openModal('transaction',item);}
+    if(act==='duplicate-transaction'&&item){
+      const copy={...item};
+      delete copy.id; delete copy.created_at; delete copy.updated_at;
+      delete copy.creator_name; delete copy.created_by;
+      openModal('transaction',copy);
+    }
     if(act==='delete-transaction'&&item&&confirm('確定要刪除這筆 '+money(item.amount)+' 交易？')) {
       attempt(async()=>{await request(path('transactions/'+id),'DELETE');await reload();show('已刪除交易');});
     }
