@@ -7,6 +7,7 @@
  const tip = (label,n) => ' data-wff-chart-tip="'+esc(label+'：'+money(n))+'" tabindex="0"';
  const empty = text=>'<div class="wff-chart-empty">'+esc(text||'目前沒有資料')+'</div>';
  const pieShades=['#111','#515151','#8b8b8b','#bdbdbd','#e2e2e2','#f5f5f5'];
+ const categoryShade=(row,index)=>/^#[a-f0-9]{6}$/i.test(String(row?.color||''))?row.color:pieShades[index%pieShades.length];
  function lines(data, series, key, compact=false) {
   if(!Array.isArray(data) || !data.length || !series.length)return empty();
   const w=680,h=260,p={left:65,right:17,top:17,bottom:43};
@@ -61,12 +62,12 @@
   let sofar=0;
   const segments=values.map((x,i)=>{
    const a=sofar/sum*100;sofar+=number(x.total);
-   return pieShades[i%pieShades.length]+' '+a+'% '+(sofar/sum*100)+'%';
+   return categoryShade(x,i)+' '+a+'% '+(sofar/sum*100)+'%';
   });
   return '<div class="wff-donut-layout"><div class="wff-donut" role="img" aria-label="支出占比甜甜圈圖" '+
    'style="background:conic-gradient('+segments.join(',')+');"><span><strong>'+money(sum)+'</strong><small>支出合計</small></span></div>'+
    '<div class="wff-donut-legend">'+values.map((x,i)=>'<div data-wff-chart-tip="'+esc(x.label+'：'+money(x.total))+'" tabindex="0">'+
-   '<span style="background:'+pieShades[i%pieShades.length]+'"></span><em>'+esc(x.label||'未分類')+'</em>'+
+   '<span style="background:'+categoryShade(x,i)+'"></span><em>'+esc(x.label||'未分類')+'</em>'+
    '<b>'+Math.round(number(x.total)/sum*100)+'%</b></div>').join('')+'</div></div>';
  }
  function bars(rows) {
@@ -74,7 +75,7 @@
   if(!list.length)return empty();
   return '<div class="wff-ranked-bars">'+list.map((x,i)=>'<div class="wff-ranked-row"'+tip(x.label||x.name,x.total)+'>'+
    '<span>'+String(i+1).padStart(2,'0')+'　'+esc(x.label||x.name||'未分類')+'</span><b>'+money(x.total)+'</b>'+
-   '<div class="wff-ranked-track"><i style="width:'+Math.max(1,number(x.total)/maximum*100)+'%"></i></div></div>').join('')+'</div>';
+   '<div class="wff-ranked-track"><i style="background:'+categoryShade(x,i)+';width:'+Math.max(1,number(x.total)/maximum*100)+'%"></i></div></div>').join('')+'</div>';
  }
  function methodLabels(x){return ({cash:'現金',credit:'信用卡',mobile:'行動支付',bank:'銀行',other:'其他'})[x]||x;}
  return void(window.WFFCharts={
