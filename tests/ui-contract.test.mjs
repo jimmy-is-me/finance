@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.2.4 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.4'\)/);
+test('v1.2.5 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.2.5'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -183,4 +183,56 @@ test('standalone Finance browser tab includes a cache-busted SVG favicon',()=>{
   assert.match(svg,/<svg/);
   assert.match(svg,/viewBox="0 0 64 64"/);
   assert.match(svg,/>WUMETAX Finance</);
+});
+
+
+test('v1.2.5 duplicate transaction uses a new ID and preserves original',()=>{
+ assert.match(js,/data-action="duplicate-transaction"/);
+ assert.match(js,/delete copy\.id/);
+ assert.match(js,/openModal\('transaction',copy\)/);
+ assert.match(js,/copy\.duplicate_from=item\.id/);
+ assert.match(js,/const id=S\.draft\.id;/);
+ assert.match(js,/id\?'PUT':'POST'/);
+});
+test('payment method changes update dependent DOM without render or scroll reset',()=>{
+ assert.match(js,/function refreshTransactionFields\(form,changed\)/);
+ assert.match(js,/block\.innerHTML=transactionFields\(data\)/);
+ assert.match(js,/refreshTransactionFields\(t\.form,t\.name\)/);
+ const pos=js.indexOf('function refreshTransactionFields(form,changed)');
+ const end=js.indexOf('function updateCategorySelect(form)',pos);
+ const body=js.slice(pos,end);
+ assert.doesNotMatch(body,/\brender\(\)/);
+ assert.doesNotMatch(body,/window\.scrollTo/);
+});
+test('category colors appear across ledger, category UI, and charts',()=>{
+ const api=readFileSync('includes/class-wff-api.php','utf8');
+ const insights=readFileSync('includes/class-wff-insights.php','utf8');
+ const chart=readFileSync('assets/js/charts.js','utf8');
+ assert.match(api,/c\.color AS category_color/);
+ assert.match(insights,/c\.color AS color/);
+ assert.match(js,/function transactionFields\(d\)/);
+ assert.match(js,/categoryChip\(x\.category_name/);
+ assert.match(js,/categoryChip\(x\.name,x\.color\)/);
+ assert.match(css,/wff-category-chip/);
+ assert.match(chart,/categoryShade/);
+ assert.match(chart,/^/);
+});
+test('five-member default and administrator-controlled exceptions are enforced server-side',()=>{
+ const storage=readFileSync('includes/class-wff-storage.php','utf8');
+ const api=readFileSync('includes/class-wff-api.php','utf8');
+ const admin=readFileSync('includes/class-wff-admin.php','utf8');
+ assert.match(storage,/member_limit int\(11\) NOT NULL DEFAULT 5/);
+ assert.match(api,/household_capacity/);
+ assert.match(api,/GET_LOCK/);
+ assert.match(api,/RELEASE_LOCK/);
+ assert.match(api,/已達 .* 位上限/);
+ assert.match(api,/member_limit.*member_limit/);
+ assert.match(admin,/save_household_limit/);
+ assert.match(admin,/check_admin_referer\('wff_household_limit_/);
+ assert.match(js,/wff-member-capacity/);
+});
+test('minimal footer and consistent field geometry are retained',()=>{
+ assert.match(js,/<footer class="wff-footer">© WUMETAX FINANCE<\/footer>/);
+ assert.match(css,/--wff-control-height:52px/);
+ assert.match(css,/wff-transactions td:last-child/);
 });
