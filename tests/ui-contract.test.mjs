@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.2.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.1'\)/);
+test('v1.2.2 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.2.2'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -64,4 +64,43 @@ test('finance modal has fixed aligned 22px label + 52px controls across columns'
   assert.match(css, /max-height:52px!important/);
   assert.match(css, /margin:0!important/);
   assert.match(css, /wff-modal \.wff-form-grid > \.wff-field/);
+});
+
+
+test('login submission is handled while native registration and reset submissions still pass through', () => {
+  assert.match(js, /form\.classList\.contains\('wff-login-form'\)/);
+  assert.match(js, /form\.querySelector\('\[name="action"\]'\)\?\.value !== 'wff_login'\) return/);
+  assert.match(js, /if\(!handled\.includes\(form\.id\)\) return;\s*ev\.preventDefault\(\)/);
+  assert.match(js, /request\('auth\/login','POST'/);
+  assert.match(js, /登入驗證中/);
+  assert.match(js, /wff_login','check'/);
+});
+test('forgot and reset flows use Finance layout and core WordPress reset verification', () => {
+  assert.match(js, /function forgotView\(\)/);
+  assert.match(js, /function resetView\(\)/);
+  assert.match(js, /wff_action/);
+  assert.match(frontend, /admin_post_nopriv_wff_forgot/);
+  assert.match(frontend, /admin_post_nopriv_wff_reset/);
+  assert.match(frontend, /get_password_reset_key\(\$user\)/);
+  assert.match(frontend, /check_password_reset_key\(\$reset_key, \$user_login\)/);
+  assert.match(frontend, /reset_password\(\$user, \$password\)/);
+  assert.match(frontend, /'lostPassword' => add_query_arg/);
+});
+test('transactional email follows the black-and-white Finance brand', () => {
+  const mail=readFileSync('includes/class-wff-mail.php','utf8');
+  assert.match(mail, /FAMILY INVITATION/);
+  assert.match(mail, /ACCOUNT SECURITY/);
+  assert.match(mail, /WELCOME TO FINANCE/);
+  assert.match(mail, /text\/html; charset=UTF-8/);
+  assert.match(mail, /background:#000;color:#fff/);
+  const api=readFileSync('includes/class-wff-api.php','utf8');
+  assert.match(api, /WFF_Mail::invitation/);
+  assert.match(api, /self::route\('\/auth\/login'/);
+  assert.match(php, /class-wff-mail\.php/);
+});
+test('secure HTTPS-aware WordPress cookies with frontend error hints', () => {
+  assert.match(frontend, /wp_signon\(/);
+  assert.match(frontend, /is_ssl\(\) \|\| wp_parse_url\(home_url\('\/'\), PHP_URL_SCHEME\) === 'https'/);
+  assert.match(frontend, /wp_set_current_user\(\$user->ID\)/);
+  assert.match(js, /請確認瀏覽器允許 Cookie/);
 });
