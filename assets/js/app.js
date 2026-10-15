@@ -427,18 +427,40 @@
     if(type==='transaction'){
       const scope=d.scope||'family',kind=d.kind||'expense';
       const categories=S.meta.categories.filter(c=>c.scope===scope&&c.kind===kind);
+      const method=d.payment_method||'cash';
+      const isTransfer=kind==='transfer';
+      const typeFor={cash:'cash',bank:'bank',card:'credit',mobile:'mobile'};
+      const available=(S.meta.accounts||[]);
+      const sourceTypes=isTransfer?['cash','bank','credit']:method==='mobile'?['cash','bank','credit']:
+        typeFor[method]?[typeFor[method]]:['cash','bank','credit'];
+      const sources=available.filter(x=>sourceTypes.includes(x.type)&&
+        (Number(x.enabled)!==0||Number(x.id)===Number(d.account_id)));
+      const targets=available.filter(x=>['cash','bank','credit'].includes(x.type)&&
+        (Number(x.enabled)!==0||Number(x.id)===Number(d.destination_account_id)));
+      const wallets=available.filter(x=>x.type==='mobile'&&
+        (Number(x.enabled)!==0||Number(x.id)===Number(d.payment_channel_id)));
       title=d.id?'編輯記帳':'新增一筆記帳';
       body='<form id="wff-transaction-form" class="wff-form">'+
         '<div class="wff-form-grid">'+field('帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],scope)+'</select>')+
         field('類型','<select name="kind">'+selectValues([['expense','支出'],['income','收入'],['transfer','轉帳／信用卡還款']],kind)+'</select>')+'</div>'+
         '<div class="wff-form-grid">'+field('日期','<input name="occurred_on" type="date" required value="'+e(d.occurred_on||new Date().toLocaleDateString('sv-SE'))+'">')+
         field('金額（NT$）','<input name="amount" type="number" step=".01" min=".01" required inputmode="decimal" value="'+e(d.amount||'')+'" placeholder="0">')+'</div>'+
-        (kind!=='transfer'?field('分類','<select name="category_id" required>'+options(categories,d.category_id)+'</select>'):'<div class="wff-note">轉帳不會增加家庭／公司的收入或支出。繳信用卡帳單請選擇來源銀行與轉入信用卡。</div>')+
-        field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例：晚餐、主機年費">')+
-        '<div class="wff-form-grid">'+field(kind==='transfer'?'轉出帳戶':'付款／收款帳戶',
-          '<select name="account_id">'+options(S.meta.accounts,d.account_id,kind==='transfer'?'選擇來源帳戶':'不指定帳戶')+'</select>')+
-        (kind==='transfer'?field('轉入帳戶','<select name="destination_account_id" required>'+options(S.meta.accounts,d.destination_account_id,'選擇轉入帳戶')+'</select>'):
-        field('付款方式','<select name="payment_method">'+selectValues([['cash','現金'],['bank','銀行轉帳'],['card','信用卡'],['other','其他']],d.payment_method||'cash')+'</select>'))+'</div>'+
+        (isTransfer?'<div class="wff-note">轉帳或信用卡還款屬於資金移動，不會重複計入家庭或公司支出。</div>':
+         field('分類','<select name="category_id" required>'+options(categories,d.category_id)+'</select>'))+
+        field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例如：晚餐、主機年費">')+
+        (!isTransfer?field('付款方式','<select name="payment_method">'+selectValues([
+          ['cash','現金'],['card','信用卡'],['mobile','行動支付'],['bank','銀行帳戶'],['other','其他']],method)+'</select>'):'')+
+        (method==='mobile'&&!isTransfer?field('使用的行動支付','<select name="payment_channel_id" required>'+
+          options(wallets,d.payment_channel_id,'選擇 LINE Pay、Apple Pay 等')+'</select>'):'')+
+        '<div class="wff-form-grid">'+
+        field(isTransfer?'轉出帳戶':method==='mobile'?'實際扣款來源':'付款／收款工具',
+          '<select name="account_id">'+options(sources,d.account_id,isTransfer?'請選擇轉出帳戶':method==='mobile'?'扣款來源未指定':'選擇付款工具（選填）')+'</select>')+
+        (isTransfer?field('轉入帳戶／信用卡','<select name="destination_account_id" required>'+
+          options(targets,d.destination_account_id,'選擇轉入帳戶或信用卡')+'</select>'):
+          '<div class="wff-tool-hint">'+(method==='mobile'?
+            '行動支付和實際扣款卡片會同時記錄，但支出只會計算一次。':
+            '可以先建立常用付款工具，日後記帳更方便。')+'</div>')+
+        '</div>'+
         '<button class="wff-button wff-primary" type="submit">儲存記帳 ✓</button></form>';
     } else if(type==='category'){
       title=d.id?'編輯分類':'新增分類';
