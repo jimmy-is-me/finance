@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.2.5 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.5'\)/);
+test('v1.2.6 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.2.6'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -235,4 +235,40 @@ test('minimal footer and consistent field geometry are retained',()=>{
  assert.match(js,/<footer class="wff-footer">© WUMETAX FINANCE<\/footer>/);
  assert.match(css,/--wff-control-height:52px/);
  assert.match(css,/wff-transactions td:last-child/);
+});
+
+
+test('loans module appears directly below ledger and uses household-scoped REST', () => {
+  const storage=readFileSync('includes/class-wff-storage.php','utf8');
+  const loans=readFileSync('includes/class-wff-loans.php','utf8');
+  assert.match(js, /\['transactions','收支紀錄','↔'\],\['loans','貸款紀錄'/);
+  assert.match(js, /function loans\(\)/);
+  assert.match(js, /function loanStatusText\(/);
+  assert.match(js, /wff-loan-form/);
+  assert.match(js, /wff-loan-payment-form/);
+  assert.match(js, /undo-loan-payment/);
+  assert.match(storage, /'loans','loan_payments'/);
+  assert.match(storage, /UNIQUE KEY loan_installment \(loan_id,installment_no\)/);
+  assert.match(loans, /WFF_Storage::table\('members'\)/);
+  assert.match(loans, /WHERE household_id=%d AND loan_id=%d/);
+  assert.match(loans, /public static function save_loan/);
+  assert.match(loans, /public static function save_payment/);
+  assert.match(loans, /public static function delete_payment/);
+  assert.match(loans, /installments/);
+  assert.match(loans, /extra_principal/);
+  assert.match(php, /class-wff-loans.php/);
+});
+test('projected loan payments are not automatically double-booked into expenses',()=>{
+  const loans=readFileSync('includes/class-wff-loans.php','utf8');
+  assert.doesNotMatch(loans, /WFF_Storage::table\('transactions'\)/);
+  assert.match(loans, /loan_payments/);
+  assert.match(js, /不會自動加進收支/);
+});
+test('clicking the modal backdrop or pressing Escape does not discard unsaved edits',()=>{
+  assert.match(js, /<div class="wff-overlay" role="presentation">/);
+  assert.doesNotMatch(js, /<div class="wff-overlay" data-action="close-modal"/);
+  assert.match(js, /if\(act==='close-modal'\)\{ resetModal\(\); \}/);
+  assert.match(js, /if\(ev\.key==='Escape'\)\{closeTip\(\);\}/);
+  assert.match(js, /wff-modal-close" data-action="close-modal"/);
+  assert.match(js, /resetModal\(\);await reload\(\)/);
 });
