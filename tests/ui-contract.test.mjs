@@ -47,7 +47,8 @@ test('WordPress admin settings and read-only management are present', () => {
 });
 test('guest login and optional signup do not include subscription integration', () => {
   assert.match(frontend, /wp_signon/);
-  assert.match(frontend, /wp_new_user_notification/);
+  assert.match(frontend, /WFF_Mail::registration/);
+  assert.match(frontend, /get_password_reset_key/);
   assert.match(frontend, /wff_registration_enabled/);
   assert.match(js, /登入 Finance/);
   assert.match(js, /申請免費帳號/);
