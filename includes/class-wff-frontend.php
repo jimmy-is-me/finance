@@ -79,7 +79,8 @@ final class WFF_Frontend {
     public static function enqueue() {
         if (!self::is_app_request()) { return; }
         wp_enqueue_style('wff-app', WFF_URL . 'assets/css/app.css', array(), WFF_VERSION);
-        wp_enqueue_script('wff-app', WFF_URL . 'assets/js/app.js', array(), WFF_VERSION, true);
+        wp_enqueue_script('wff-charts', WFF_URL . 'assets/js/charts.js', array(), WFF_VERSION, true);
+        wp_enqueue_script('wff-app', WFF_URL . 'assets/js/app.js', array('wff-charts'), WFF_VERSION, true);
         $invite = isset($_GET['wff_invite']) ? sanitize_text_field(wp_unslash($_GET['wff_invite'])) : '';
         $redirect = self::app_url();
         if ($invite && preg_match('/^[a-f0-9]{48}$/', $invite)) {
