@@ -358,7 +358,9 @@
       '<p>設定一次還款條件，按月自動推算繳費日期；逐期確認是否繳款。</p></div>'+
       (canEdit()?simpleBtn('＋ 新增貸款','new-loan','wff-primary'):'')+'</div>';
     const cards='<div class="wff-metrics wff-loan-metrics">'+
-      card('追蹤貸款',live.length,'tone-neutral','目前啟用的貸款筆數')+
+      '<article class="wff-metric tone-neutral"><div class="wff-metric-label">追蹤貸款</div>'+
+      '<div class="wff-metric-value">'+e(live.length)+' 筆</div>'+
+      '<div class="wff-metric-sub">目前啟用的貸款筆數</div></article>'+
       card('估算未償本金',totalBalance,'tone-neutral','依登錄繳款推算')+
       card('下一期預計繳款',dueTotal,'tone-neutral','各貸款下一期待繳金額合計')+
       card('待確認／逾期',dueCount,'tone-neutral','當期未確認的貸款筆數')+
