@@ -297,7 +297,7 @@
         S.activities.map(x=>'<tr><td>'+e(x.created_at)+'</td><td>'+e(x.display_name)+'</td><td>'+e(x.action)+'</td><td>'+e(x.object_id)+'</td></tr>').join('')+
         '</tbody></table></div>':empty('還沒有操作紀錄'))+'</section>';
   }
-  const field = (label,control) => '<label>'+e(label)+control+'</label>';
+  const field = (label,control) => '<label class="wff-field"><span class="wff-field-title">'+e(label)+'</span>'+control+'</label>';
   function options(items,value,blank='請選擇') {
     return '<option value="">'+e(blank)+'</option>'+items.map(x=>'<option value="'+e(x.id)+'" '+(String(value||'')===String(x.id)?'selected':'')+'>'+e(x.name)+'</option>').join('');
   }
