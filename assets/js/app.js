@@ -717,7 +717,54 @@
       });
     }
   });
-  document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&S.modal)resetModal();});
+  // Accessible chart tooltip: hover, keyboard focus, or tap. All text is
+  // inserted with textContent so transaction/label text is never HTML.
+  const tooltip=document.createElement('div');
+  tooltip.className='wff-chart-tooltip';
+  tooltip.setAttribute('role','status');
+  tooltip.hidden=true;
+  document.body.appendChild(tooltip);
+  let hovered=null;
+  const showTip=(target,ev)=>{
+    hovered=target;
+    tooltip.textContent=target.dataset.wffChartTip||'';
+    tooltip.hidden=false;
+    if(ev?.clientX!==undefined){
+      const x=Math.max(8,Math.min(window.innerWidth-240,ev.clientX+13));
+      const y=Math.max(8,Math.min(window.innerHeight-52,ev.clientY+13));
+      tooltip.style.left=x+'px';tooltip.style.top=y+'px';
+    }else{
+      const rect=target.getBoundingClientRect();
+      tooltip.style.left=Math.max(8,Math.min(window.innerWidth-240,rect.left))+'px';
+      tooltip.style.top=Math.max(8,rect.top-44)+'px';
+    }
+  };
+  const closeTip=()=>{tooltip.hidden=true;hovered=null;};
+  root.addEventListener('pointerover',ev=>{
+    const target=ev.target.closest('[data-wff-chart-tip]');
+    if(target&&ev.pointerType!=='touch')showTip(target,ev);
+  });
+  root.addEventListener('pointermove',ev=>{
+    if(hovered&&ev.pointerType!=='touch')showTip(hovered,ev);
+  });
+  root.addEventListener('pointerout',ev=>{
+    if(hovered&&!ev.relatedTarget?.closest?.('[data-wff-chart-tip]'))closeTip();
+  });
+  root.addEventListener('pointerdown',ev=>{
+    if(ev.pointerType!=='touch')return;
+    const target=ev.target.closest('[data-wff-chart-tip]');
+    if(target)showTip(target,ev);else closeTip();
+  });
+  root.addEventListener('focusin',ev=>{
+    const target=ev.target.closest('[data-wff-chart-tip]');
+    if(target)showTip(target);
+  });
+  root.addEventListener('focusout',ev=>{
+    if(ev.target.closest('[data-wff-chart-tip]'))closeTip();
+  });
+  document.addEventListener('keydown',ev=>{
+    if(ev.key==='Escape'){closeTip();if(S.modal)resetModal();}
+  });
   async function start() {
     try {
       if (inviteToken) {
