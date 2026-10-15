@@ -827,6 +827,28 @@
     if(act==='delete-transaction'&&item&&confirm('確定要刪除這筆 '+money(item.amount)+' 交易？')) {
       attempt(async()=>{await request(path('transactions/'+id),'DELETE');await reload();show('已刪除交易');});
     }
+    if(act==='new-loan'){openModal('loan',{scope:'family',annual_rate:2.295,installments:60,status:'active'});}
+    if(act==='edit-loan'){
+      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
+      if(loan)openModal('loan',loan);
+    }
+    if(act==='pay-loan'){
+      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
+      const number=Number(target.dataset.number);
+      if(loan?.schedule?.some(x=>x.number===number)){
+        openModal('loan-payment',{loan_id:id,installment_no:number});
+      }
+    }
+    if(act==='undo-loan-payment' && confirm('確定取消這一期的繳款紀錄？不會刪除一般收支紀錄。')){
+      const number=Number(target.dataset.number);
+      attempt(async()=>{
+        await request(path('loans/'+id+'/payments/'+number),'DELETE');
+        await reload();show('已取消第 '+number+' 期繳款紀錄');
+      });
+    }
+    if(act==='toggle-loan-schedule'){
+      S.loanExpanded[id]=!S.loanExpanded[id];render();
+    }
     if(act==='new-category'){openModal('category');}
     if(act==='category-up'){moveCategory(id,-1);}
     if(act==='category-down'){moveCategory(id,1);}
@@ -856,6 +878,7 @@
     if(t.id==='wff-month') { S.month=t.value;S.page=1;attempt(reload); }
     if(t.id==='wff-scope'){S.scope=t.value;S.page=1;attempt(reload);}
     if(t.id==='wff-kind'){S.kind=t.value;S.page=1;attempt(reload);}
+    if(t.id==='wff-loan-scope'){S.loanScope=t.value;render();}
     if(t.dataset.memberRole){
       const uid=t.dataset.memberRole;
       attempt(async()=>{await request(path('members/'+uid),'PATCH',{role:t.value});await reload();show('已更新成員權限');});
@@ -916,6 +939,20 @@
       });
     }
     if(form.id==='wff-transaction-form'){attempt(()=>submitTransaction(getFormData(form)));}
+    if(form.id==='wff-loan-form'){
+      attempt(async()=>{
+        const id=S.draft.id;
+        await request(path('loans'+(id?'/'+id:'')),id?'PUT':'POST',getFormData(form));
+        resetModal();await reload();show(id?'貸款已更新':'貸款已建立，每月還款排程已生成');
+      });
+    }
+    if(form.id==='wff-loan-payment-form'){
+      attempt(async()=>{
+        const loanId=S.draft.loan_id;
+        await request(path('loans/'+loanId+'/payments'),'POST',getFormData(form));
+        resetModal();await reload();show('本期繳款已登錄');
+      });
+    }
     if(form.id==='wff-category-form'){
       attempt(async()=>{const id=S.draft.id;await request(path('categories'+(id?'/'+id:'')),id?'PUT':'POST',getFormData(form));
         resetModal();await reload();show('分類儲存成功');});
