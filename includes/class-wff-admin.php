@@ -14,6 +14,7 @@ final class WFF_Admin {
     public static function init() {
         add_action('admin_menu', array(__CLASS__, 'menu'));
         add_action('admin_post_wff_settings_save', array(__CLASS__, 'save_settings'));
+        add_action('admin_post_wff_household_limit', array(__CLASS__, 'save_household_limit'));
         add_action('admin_enqueue_scripts', array(__CLASS__, 'enqueue'));
         add_action('admin_notices', array(__CLASS__, 'notices'));
         add_filter('plugin_action_links_' . plugin_basename(WFF_PATH . 'wumetax-finance.php'), array(__CLASS__, 'action_links'));
@@ -164,7 +165,7 @@ final class WFF_Admin {
         $page = max(1, absint($_GET['paged'] ?? 1));
         $per_page = 25;
         $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT h.id,h.name,h.owner_user_id,h.created_at,u.display_name,u.user_email,
+            "SELECT h.id,h.name,h.owner_user_id,h.member_limit,h.created_at,u.display_name,u.user_email,
                (SELECT COUNT(*) FROM $m m WHERE m.household_id=h.id) AS member_count,
                (SELECT COUNT(*) FROM $t t WHERE t.household_id=h.id) AS tx_count
              FROM $h h LEFT JOIN $u u ON u.ID=h.owner_user_id
@@ -172,21 +173,45 @@ final class WFF_Admin {
             $per_page, ($page - 1) * $per_page
         ), ARRAY_A);
         self::intro('家庭與成員', '前台的家庭資料獨立隔離，網站管理員可從這裡查看所有家庭及基本營運狀況。');
-        echo '<div class="wff-admin-panel"><table class="widefat striped"><thead><tr><th>ID</th><th>家庭空間</th><th>擁有者</th><th>成員</th><th>交易</th><th>建立時間（UTC）</th><th>檢視</th></tr></thead><tbody>';
+        echo '<div class="wff-admin-panel"><table class="widefat striped"><thead><tr><th>ID</th><th>家庭空間</th><th>擁有者</th><th>成員</th><th>成員上限</th><th>交易</th><th>建立時間（UTC）</th><th>檢視</th></tr></thead><tbody>';
         foreach ($rows as $row) {
             $link = add_query_arg(array('page'=>'wff-transactions', 'household_id'=>(int)$row['id']), admin_url('admin.php'));
             echo '<tr><td>' . (int) $row['id'] . '</td><td><strong>' . esc_html($row['name'])
                 . '</strong></td><td>' . esc_html($row['display_name'] ?: '帳號已不存在')
                 . '<br><small>' . esc_html($row['user_email']) . '</small></td><td>'
-                . (int) $row['member_count'] . '</td><td>' . (int) $row['tx_count']
+                . (int) $row['member_count'] . '</td><td><form class="wff-admin-limit-form" action="' . esc_url(admin_url('admin-post.php')) . '" method="post">'
+                . '<input type="hidden" name="action" value="wff_household_limit">'
+                . '<input type="hidden" name="household_id" value="' . (int) $row['id'] . '">'
+                . wp_nonce_field('wff_household_limit_' . (int)$row['id'], '_wpnonce', true, false)
+                . '<label class="screen-reader-text" for="wff-limit-' . (int)$row['id'] . '">家庭人數上限</label>'
+                . '<input id="wff-limit-' . (int)$row['id'] . '" type="number" min="1" max="10000" name="member_limit" value="' . (int)$row['member_limit'] . '" style="width:80px">'
+                . '<button type="submit" class="button button-small">儲存</button></form></td><td>' . (int) $row['tx_count']
                 . '</td><td>' . esc_html($row['created_at']) . '</td><td><a class="button button-small" href="'
                 . esc_url($link) . '">查看收支</a></td></tr>';
         }
-        if (!$rows) { echo '<tr><td colspan="7">尚未建立家庭空間。</td></tr>'; }
+        if (!$rows) { echo '<tr><td colspan="8">尚未建立家庭空間。</td></tr>'; }
         echo '</tbody></table>';
         self::pagination('wff-households', $page, (int) ceil($total / $per_page));
         echo '</div>';
         self::finish();
+    }
+
+    public static function save_household_limit() {
+        self::allow();
+        $hid = absint($_POST['household_id'] ?? 0);
+        check_admin_referer('wff_household_limit_' . $hid);
+        $raw = isset($_POST['member_limit']) ? sanitize_text_field(wp_unslash($_POST['member_limit'])) : '';
+        if (!$hid || !ctype_digit($raw) || (int)$raw < 1 || (int)$raw > 10000) {
+            wp_die('家庭人數上限須介於 1 至 10000 位。', '無效設定', array('response'=>400));
+        }
+        global $wpdb;
+        $h = WFF_Storage::table('households');
+        $found = $wpdb->get_var($wpdb->prepare("SELECT id FROM $h WHERE id=%d", $hid));
+        if (!$found) { wp_die('找不到家庭空間', '資料不存在', array('response'=>404)); }
+        $ok = $wpdb->update($h, array('member_limit'=>(int)$raw), array('id'=>$hid),array('%d'),array('%d'));
+        if ($ok === false) { wp_die('儲存失敗', '資料庫錯誤',array('response'=>500)); }
+        wp_safe_redirect(add_query_arg(array('page'=>'wff-households','wff_saved'=>1), admin_url('admin.php')));
+        exit;
     }
 
     public static function transactions() {
