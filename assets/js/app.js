@@ -5,7 +5,7 @@
   const config = window.WFF_CONFIG;
   if (!root || !config) return;
   const views = [
-    ['dashboard','總覽','▦'],['transactions','收支紀錄','↔'],
+    ['dashboard','總覽','▦'],['transactions','收支紀錄','↔'],['loans','貸款紀錄','▤'],
     ['accounts','付款工具','▣'],['categories','分類管理','▤'],
     ['members','家庭成員','♧'],['import','資料匯入／匯出','⇅'],
     ['activity','操作紀錄','◷']
@@ -13,7 +13,7 @@
   const S = {
     view: 'dashboard', accountTab:'all', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
     scope: 'all', kind: 'all', page: 1, households: [], hid: 0, meta: null,
-    dashboard: null, transactions: null, activities: [], modal: null,
+    dashboard: null, transactions: null, loans: null, loanExpanded: {}, loanScope:'all', activities: [], modal: null,
     draft: {}, busy: false, nav: false, notice: '', authError: '', loginDraft: '', invitationError: '', csv: '', csvName: '',
     importYear: new Date().getFullYear(), importPreview: null, invitation: null,
   };
@@ -71,6 +71,7 @@
     const [meta,dashboard,transactions] = await Promise.all(jobs);
     S.meta=meta; S.dashboard=dashboard; S.transactions=transactions;
     if (S.view === 'activity') S.activities=await request(path('activity'));
+    if (S.view === 'loans') S.loans=await request(path('loans'));
     render();
   }
   const card = (title,amount,tone,subtitle) =>
@@ -587,7 +588,7 @@
           '<button class="wff-button wff-yellow" data-action="copy-invite" type="button">複製邀請連結</button>'+
           '<p>'+ (d.email_sent?'已嘗試寄送通知 Email':'郵件未寄出，請自行複製連結傳給家人')+'</p></div>':'');
     }
-    return '<div class="wff-overlay" data-action="close-modal" role="presentation"><section class="wff-modal" role="dialog" aria-modal="true" aria-label="'+e(title)+'">'+
+    return '<div class="wff-overlay" role="presentation"><section class="wff-modal" role="dialog" aria-modal="true" aria-label="'+e(title)+'">'+
       '<div class="wff-modal-head"><div class="wff-kicker">FINANCE / EDIT</div><h2>'+e(title)+'</h2>'+
       '<button class="wff-modal-close" data-action="close-modal" aria-label="關閉" type="button">×</button></div>'+body+'</section></div>';
   }
@@ -600,7 +601,7 @@
     if (S.invitation) { root.innerHTML=invitationView(); return; }
     if (!S.hid) { root.innerHTML=welcome(); return; }
     let content = ({
-      dashboard,transactions,accounts,categories,members,import:importView,activity
+      dashboard,transactions,loans,accounts,categories,members,import:importView,activity
     })[S.view]();
     root.innerHTML=header()+content+footer()+modal();
     document.body.classList.toggle('wff-dialog-open',!!S.modal);
@@ -608,6 +609,7 @@
   async function go(view) {
     S.view=view;S.nav=false;S.modal=null;
     if(view==='activity') S.activities=await request(path('activity'));
+    if(view==='loans') S.loans=await request(path('loans'));
     render();window.scrollTo({top:0,behavior:'auto'});
   }
   function openModal(type,item) { S.modal=type;S.draft={...(item||{})};render(); }
@@ -699,7 +701,7 @@
   root.addEventListener('click',ev=>{
     const target=ev.target.closest('[data-action],[data-view]');
     if (!target) return;
-    if (target.dataset.action==='close-modal' && ev.target!==target && target.classList.contains('wff-overlay')) return;
+    // Overlay clicks intentionally do nothing; only the X button closes.
     if (target.dataset.action==='close-modal' || target.dataset.view) ev.preventDefault();
     if (target.dataset.view) { attempt(()=>go(target.dataset.view)); return; }
     const act=target.dataset.action,id=Number(target.dataset.id);
@@ -876,7 +878,7 @@
     if(ev.target.closest('[data-wff-chart-tip]'))closeTip();
   });
   document.addEventListener('keydown',ev=>{
-    if(ev.key==='Escape'){closeTip();if(S.modal)resetModal();}
+    if(ev.key==='Escape'){closeTip();}
   });
   async function start() {
     try {
