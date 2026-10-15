@@ -73,12 +73,12 @@ final class WFF_Insights {
         }
 
         $categories = self::summarize($wpdb->get_results($wpdb->prepare(
-            "SELECT t.scope,c.name AS label,SUM(t.amount) AS total FROM $t t
+            "SELECT t.scope,c.name AS label,c.color AS color,SUM(t.amount) AS total FROM $t t
              LEFT JOIN $c c ON c.id=t.category_id AND c.household_id=t.household_id
              WHERE t.household_id=%d AND t.kind='expense' AND t.occurred_on LIKE %s
-             GROUP BY t.scope,t.category_id,c.name ORDER BY total DESC",
+             GROUP BY t.scope,t.category_id,c.name,c.color ORDER BY total DESC",
             $hid, $month.'%'
-        ),ARRAY_A),array('scope','label'));
+        ),ARRAY_A),array('scope','label','color'));
 
         // Radar dimensions are stable groups rather than arbitrary changing categories.
         $radar_labels = array('飲食','交通','生活用品','健康醫療','休閒娛樂','其他');
