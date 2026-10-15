@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>WUMETAX Finance</title>
+  <rect x="2" y="2" width="60" height="60" fill="#0a0a0a" rx="7"/>
+  <path d="M17 49V15h30v8H27v7h17v8H27v11z" fill="#fff"/>
+  <path d="M50 4v11M44.5 9.5h11" stroke="#fff" stroke-width="2.5" stroke-linecap="square"/>
+</svg>
