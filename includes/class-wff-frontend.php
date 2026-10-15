@@ -33,6 +33,10 @@ final class WFF_Frontend {
         add_action('template_redirect', array(__CLASS__, 'render'), 0);
         add_action('admin_post_nopriv_wff_login', array(__CLASS__, 'login'));
         add_action('admin_post_wff_login', array(__CLASS__, 'login'));
+        add_action('admin_post_nopriv_wff_forgot', array(__CLASS__, 'forgot_password'));
+        add_action('admin_post_wff_forgot', array(__CLASS__, 'forgot_password'));
+        add_action('admin_post_nopriv_wff_reset', array(__CLASS__, 'reset_password'));
+        add_action('admin_post_wff_reset', array(__CLASS__, 'reset_password'));
         add_action('admin_post_nopriv_wff_register', array(__CLASS__, 'register_user'));
         add_filter('show_admin_bar', array(__CLASS__, 'hide_admin_bar'));
         add_filter('login_redirect', array(__CLASS__, 'login_redirect'), 10, 3);
@@ -87,9 +91,12 @@ final class WFF_Frontend {
             'login' => $redirect,
             'loginAction' => admin_url('admin-post.php'),
             'loginNonce' => wp_create_nonce('wff_front_login'),
+            'forgotNonce' => wp_create_nonce('wff_front_forgot'),
+            'resetNonce' => wp_create_nonce('wff_front_reset'),
             'registerNonce' => wp_create_nonce('wff_register_user'),
             'registrationEnabled' => (bool) get_option('wff_registration_enabled', 1),
-            'lostPassword' => wp_lostpassword_url($redirect),
+            'lostPassword' => add_query_arg('wff_action', 'forgot', $redirect),
+            'useAjaxLogin' => true,
             'logout' => wp_logout_url(self::app_url()),
             'home' => self::app_url(),
             'user' => is_user_logged_in() ? array(
@@ -142,42 +149,139 @@ final class WFF_Frontend {
         return $response;
     }
 
-    public static function login() {
-        if (!isset($_POST['wff_login_nonce'])
-            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['wff_login_nonce'])), 'wff_front_login')) {
-            wp_safe_redirect(add_query_arg('wff_login', 'expired', self::app_url()));
-            exit;
+    private static function auth_target($invite = '') {
+        $url = self::app_url();
+        if (is_string($invite) && preg_match('/^[a-f0-9]{48}$/', $invite)) {
+            $url = add_query_arg('wff_invite', $invite, $url);
         }
-        if (!is_ssl() && wp_parse_url(home_url('/'), PHP_URL_SCHEME) !== 'https') {
-            wp_die('登入需要 HTTPS，請先啟用 SSL 安全連線。', '安全性檢查', array('response' => 403));
-        }
+        return $url;
+    }
+
+    private static function limit_key($type) {
+        // Only server connection IP; never trust arbitrary X-Forwarded-For.
         $ip = sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? 'unknown');
-        $key = 'wff_login_limit_' . hash('sha256', $ip);
-        $failures = (int) get_transient($key);
-        if ($failures >= 10) {
-            wp_safe_redirect(add_query_arg('wff_login', 'limited', self::app_url()));
-            exit;
+        return 'wff_' . $type . '_' . md5($ip);
+    }
+
+    /**
+     * Shared login for admin-post fallback and REST/AJAX endpoint.
+     * Use WordPress authentication hooks, correctly handle HTTPS reverse proxies,
+     * and explicitly set the cookie via wp_signon.
+     */
+    public static function authenticate($username, $password, $remember = false, $nonce = '') {
+        if (!wp_verify_nonce((string) $nonce, 'wff_front_login')) {
+            return new WP_Error('expired', '登入頁面已過期，請重新整理再試一次', array('status' => 403));
         }
-        $username = sanitize_text_field(wp_unslash($_POST['log'] ?? ''));
-        $password = (string) wp_unslash($_POST['pwd'] ?? '');
+        $username = trim((string) $username);
+        $password = (string) $password;
+        if ($username === '' || $password === '') {
+            return new WP_Error('empty', '請輸入帳號和密碼', array('status' => 400));
+        }
+        $key = self::limit_key('login');
+        if ((int) get_transient($key) >= 10) {
+            return new WP_Error('limited', '登入嘗試次數過多，請稍後再試或重設密碼', array('status' => 429));
+        }
+        $secure = is_ssl() || wp_parse_url(home_url('/'), PHP_URL_SCHEME) === 'https';
+        // wp_signon accepts username OR registered email on current WordPress versions.
         $user = wp_signon(array(
             'user_login' => $username,
             'user_password' => $password,
-            'remember' => !empty($_POST['rememberme']),
-        ), is_ssl());
-        $invite = sanitize_text_field(wp_unslash($_POST['wff_invite'] ?? ''));
-        $return = self::app_url();
-        if (preg_match('/^[a-f0-9]{48}$/', $invite)) {
-            $return = add_query_arg('wff_invite', $invite, $return);
-        }
+            'remember' => (bool) $remember,
+        ), $secure);
         if (is_wp_error($user)) {
-            set_transient($key, $failures + 1, 10 * MINUTE_IN_SECONDS);
-            wp_safe_redirect(add_query_arg('wff_login', 'failed', $return));
-            exit;
+            set_transient($key, (int) get_transient($key) + 1, 10 * MINUTE_IN_SECONDS);
+            return new WP_Error('invalid_credentials',
+                '帳號或密碼不正確，請確認後重試，也可以使用忘記密碼功能',
+                array('status' => 401));
         }
         delete_transient($key);
         wp_set_current_user($user->ID);
-        wp_safe_redirect($return);
+        return $user;
+    }
+
+    public static function login() {
+        $invite = sanitize_text_field(wp_unslash($_POST['wff_invite'] ?? ''));
+        $target = self::auth_target($invite);
+        if (!is_ssl() && wp_parse_url(home_url('/'), PHP_URL_SCHEME) !== 'https') {
+            wp_safe_redirect(add_query_arg('wff_login', 'https', $target), 303);
+            exit;
+        }
+        $user = self::authenticate(
+            sanitize_text_field(wp_unslash($_POST['log'] ?? '')),
+            (string) wp_unslash($_POST['pwd'] ?? ''),
+            !empty($_POST['rememberme']),
+            sanitize_text_field(wp_unslash($_POST['wff_login_nonce'] ?? ''))
+        );
+        if (is_wp_error($user)) {
+            $reason = $user->get_error_code();
+            if (!in_array($reason, array('limited','expired','empty','invalid_credentials'), true)) {
+                $reason = 'failed';
+            }
+            wp_safe_redirect(add_query_arg('wff_login', $reason, $target), 303);
+            exit;
+        }
+        wp_safe_redirect($target, 303);
+        exit;
+    }
+
+    public static function forgot_password() {
+        $invite = sanitize_text_field(wp_unslash($_POST['wff_invite'] ?? ''));
+        $back = self::auth_target($invite);
+        if (!isset($_POST['wff_forgot_nonce'])
+            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['wff_forgot_nonce'])), 'wff_front_forgot')) {
+            wp_safe_redirect(add_query_arg(array('wff_action'=>'forgot','wff_forgot'=>'expired'), $back), 303);
+            exit;
+        }
+        $key = self::limit_key('forgot');
+        if ((int) get_transient($key) >= 6) {
+            wp_safe_redirect(add_query_arg(array('wff_action'=>'forgot','wff_forgot'=>'limited'), $back), 303);
+            exit;
+        }
+        set_transient($key, (int) get_transient($key) + 1, HOUR_IN_SECONDS);
+        $account = trim(sanitize_text_field(wp_unslash($_POST['account'] ?? '')));
+        $user = is_email($account) ? get_user_by('email', $account) : get_user_by('login', $account);
+        if ($user instanceof WP_User) {
+            $token = get_password_reset_key($user);
+            if (!is_wp_error($token)) {
+                $url = add_query_arg(array(
+                    'wff_action' => 'reset',
+                    'wff_key' => $token,
+                    'wff_user' => $user->user_login,
+                ), $back);
+                WFF_Mail::password_reset($user, $url);
+            }
+        }
+        // Deliberately don't disclose whether an email belongs to a user.
+        wp_safe_redirect(add_query_arg(array('wff_action'=>'forgot','wff_forgot'=>'sent'), $back), 303);
+        exit;
+    }
+
+    public static function reset_password() {
+        $invite = sanitize_text_field(wp_unslash($_POST['wff_invite'] ?? ''));
+        $back = self::auth_target($invite);
+        $user_login = sanitize_text_field(wp_unslash($_POST['wff_user'] ?? ''));
+        $reset_key = sanitize_text_field(wp_unslash($_POST['wff_key'] ?? ''));
+        $reset_url = add_query_arg(array(
+            'wff_action'=>'reset','wff_user'=>$user_login,'wff_key'=>$reset_key,
+        ), $back);
+        if (!isset($_POST['wff_reset_nonce'])
+            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['wff_reset_nonce'])), 'wff_front_reset')) {
+            wp_safe_redirect(add_query_arg('wff_reset','expired',$reset_url), 303);
+            exit;
+        }
+        $password = (string) wp_unslash($_POST['password'] ?? '');
+        $confirm = (string) wp_unslash($_POST['password_confirm'] ?? '');
+        if (strlen($password) < 12 || strlen($password) > 128 || $password !== $confirm) {
+            wp_safe_redirect(add_query_arg('wff_reset','mismatch',$reset_url), 303);
+            exit;
+        }
+        $user = check_password_reset_key($reset_key, $user_login);
+        if (is_wp_error($user)) {
+            wp_safe_redirect(add_query_arg(array('wff_action'=>'forgot','wff_reset'=>'invalid'),$back), 303);
+            exit;
+        }
+        reset_password($user, $password);
+        wp_safe_redirect(add_query_arg('wff_reset','success',$back), 303);
         exit;
     }
 
@@ -227,7 +331,19 @@ final class WFF_Frontend {
             wp_safe_redirect(add_query_arg('wff_signup', 'failed', $back));
             exit;
         }
-        wp_new_user_notification($uid, null, 'user');
+        $new_user = get_userdata($uid);
+        $key = $new_user ? get_password_reset_key($new_user) : new WP_Error('missing_user', '帳號不存在');
+        if (is_wp_error($key)) {
+            wp_safe_redirect(add_query_arg('wff_signup', 'mail_failed', $back), 303);
+            exit;
+        }
+        $setup_url = add_query_arg(array(
+            'wff_action' => 'reset', 'wff_key' => $key, 'wff_user' => $new_user->user_login,
+        ), $back);
+        if (!WFF_Mail::registration($new_user, $setup_url)) {
+            wp_safe_redirect(add_query_arg('wff_signup', 'mail_failed', $back), 303);
+            exit;
+        }
         wp_safe_redirect(add_query_arg('wff_signup', 'sent', $back));
         exit;
     }
