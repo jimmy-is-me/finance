@@ -268,7 +268,7 @@
     const bizCategories=(ins.categories||[]).filter(x=>x.scope==='business');
     const largest=[...famCategories,...bizCategories].sort((x,y)=>Number(y.total)-Number(x.total))[0];
     const totalCredit=(d.cards||[]).reduce((sum,x)=>sum+Number(x.outstanding||0),0);
-    const biggest=d.recent?.filter(x=>x.kind==='expense').sort((x,y)=>Number(y.amount)-Number(x.amount))[0];
+    const biggest=ins.biggest_expense;
     const monthSeries=[
       {key:'family_income',label:'家庭收入'},{key:'family_expense',label:'家庭支出'},
       {key:'business_income',label:'公司收入'},{key:'business_expense',label:'公司支出'}
@@ -314,7 +314,7 @@
         '<div class="wff-metric-sub">'+money(largest?.total||0)+'</div></article>'+
       '<article class="wff-metric"><div class="wff-metric-label">近期最大單筆支出</div>'+
         '<div class="wff-metric-value">'+money(biggest?.amount||0)+'</div>'+
-        '<div class="wff-metric-sub">僅顯示本月最近數筆交易中的最大值</div></article>'+
+        '<div class="wff-metric-sub">本月實際最大支出</div></article>'+
       '</div>'+
       '<div class="wff-wide-info"><span>總收入 <b>'+money(income)+'</b></span>'+
       '<span>總支出 <b>'+money(expense)+'</b></span>'+
