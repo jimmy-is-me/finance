@@ -6,6 +6,7 @@ final class WFF_API {
 
     public static function register() {
         $a = array(__CLASS__, 'auth');
+        self::route('/auth/login', 'POST', 'login', '__return_true');
         self::route('/households', 'GET', 'households', $a);
         self::route('/households', 'POST', 'create_household', $a);
         self::route('/households/(?P<hid>\d+)/meta', 'GET', 'meta', $a);
@@ -39,7 +40,18 @@ final class WFF_API {
     }
 
     public static function auth() {
-        return is_user_logged_in() ? true : new WP_Error('wff_login', '請先登入 WordPress 帳號', array('status' => 401));
+        return is_user_logged_in() ? true : new WP_Error('wff_login', '請先登入 Finance 帳號', array('status' => 401));
+    }
+
+    public static function login($r) {
+        $user = WFF_Frontend::authenticate(
+            sanitize_text_field($r->get_param('username')),
+            (string) $r->get_param('password'),
+            (bool) $r->get_param('remember'),
+            sanitize_text_field($r->get_param('nonce'))
+        );
+        if (is_wp_error($user)) { return $user; }
+        return array('authenticated' => true, 'redirect' => WFF_Frontend::app_url());
     }
 
     private static function error($message, $status = 400) {
@@ -437,8 +449,10 @@ final class WFF_API {
             'created_by'=>get_current_user_id()
         ));
         if (!$wpdb->insert_id) { return self::error('建立邀請失敗',500); }
-        $link = add_query_arg('wff_invite',rawurlencode($token),WFF_Frontend::app_url());
-        $sent = wp_mail($email,'家庭財務管理邀請','您收到家庭財務管理的邀請，7 天內可透過下列連結加入：'."\n".$link);
+        $link = add_query_arg('wff_invite', rawurlencode($token), WFF_Frontend::app_url());
+        $h = WFF_Storage::table('households');
+        $household_name = $wpdb->get_var($wpdb->prepare("SELECT name FROM $h WHERE id=%d", $hid));
+        $sent = WFF_Mail::invitation($email, $household_name ?: '家庭財務', $member_role, $link);
         WFF_Storage::activity($hid,'create_invite',0,$email);
         return array('link'=>$link,'email_sent'=>(bool)$sent,'expires_at'=>$expires);
     }
@@ -507,7 +521,7 @@ final class WFF_API {
         wp_update_user(array('ID'=>$uid,'display_name'=>$username,'role'=>'subscriber'));
         $joined = self::finish_invite($invite,$uid);
         if (is_wp_error($joined)) { return $joined; }
-        return array('registered'=>true,'login'=>WFF_Frontend::app_url());
+        return array('registered'=>true,'login'=>add_query_arg('wff_signup','invited',WFF_Frontend::app_url()));
     }
 
     public static function activity($r) {
