@@ -14,7 +14,7 @@
     view: 'dashboard', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
     scope: 'all', kind: 'all', page: 1, households: [], hid: 0, meta: null,
     dashboard: null, transactions: null, activities: [], modal: null,
-    draft: {}, busy: false, nav: false, notice: '', csv: '', csvName: '',
+    draft: {}, busy: false, nav: false, notice: '', authError: '', loginDraft: '', invitationError: '', csv: '', csvName: '',
     importYear: new Date().getFullYear(), importPreview: null, invitation: null,
   };
   const inviteToken = new URLSearchParams(location.search).get('wff_invite');
@@ -35,6 +35,7 @@
   }
   async function request(path, method = 'GET', body) {
     const options = {method, credentials:'same-origin',headers:{'X-WP-Nonce':config.nonce}};
+    if (path === 'auth/login') delete options.headers['X-WP-Nonce'];
     if (body !== undefined) {
       options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(body);
@@ -73,58 +74,148 @@
     '<article class="wff-metric '+tone+'"><div class="wff-metric-label">'+e(title)+'</div>'+
     '<div class="wff-metric-value">'+money(amount)+'</div><div class="wff-metric-sub">'+e(subtitle)+'</div></article>';
   const simpleBtn = (label,action,extra='') => '<button class="wff-button '+extra+'" data-action="'+e(action)+'" type="button">'+label+'</button>';
+  const authParams = () => new URLSearchParams(location.search);
+  const authHome = () => {
+    const url = new URL(config.home, location.origin);
+    if (inviteToken) url.searchParams.set('wff_invite', inviteToken);
+    return url.toString();
+  };
+  function authFrame(eyebrow, heading, description, contents) {
+    return '<section class="wff-auth"><div class="wff-auth-card wff-auth-flow">'+
+      '<div class="wff-kicker">WUMETAX / FINANCE · '+e(eyebrow)+'</div>'+
+      '<h1>'+heading+'</h1><p>'+e(description)+'</p>'+contents+
+      '<div class="wff-auth-foot">FAMILY FINANCE · PRIVATE DATA · NO SUBSCRIPTION</div>'+
+      '</div></section>';
+  }
+  function authAlert(message, error = false) {
+    return message ? '<div class="wff-auth-notice '+(error?'wff-auth-error':'')+'" role="'+(error?'alert':'status')+'">'+e(message)+'</div>' : '';
+  }
   function loginView() {
-    const inv=S.invitation;
-    return '<section class="wff-auth"><div class="wff-auth-card">'+
-      '<div class="wff-kicker">WUMETAX / FINANCE</div>'+
-      '<h1>你的家庭<br><span>財務指揮中心</span></h1>'+
-      '<p>家庭支出、公司營運、信用卡與每月報表，全部放在一起管理。資料只存放於你的 WordPress。</p>'+
-      (inv ? '<div class="wff-note"><b>加入 '+e(inv.household_name)+'</b><br>受邀電子郵件：'+e(inv.email)+
-        '<br>權限：'+(inv.role==='editor'?'可編輯':'僅檢視')+'</div>'+
-        '<form id="wff-signup" class="wff-form"><h3>第一次使用？建立帳號</h3>'+
-        '<label>登入帳號<input required name="username" minlength="3" autocomplete="username"></label>'+
-        '<label>密碼（至少 12 字）<input required name="password" minlength="12" type="password" autocomplete="new-password"></label>'+
-        '<button class="wff-button wff-primary" type="submit">註冊並加入家庭 →</button></form>'+
-        '<p class="wff-small">已經有 WordPress 帳號？直接登入即可接受邀請。</p>' : '')+
-      '<form method="post" action="'+e(config.loginAction)+'" class="wff-form wff-login-form" autocomplete="on">'+
+    const inv=S.invitation, p=authParams();
+    const loginStatus = p.get('wff_login');
+    const signupStatus = p.get('wff_signup');
+    const loginMessages = {
+      expired:'登入頁面已過期，請重新整理再試一次',
+      limited:'登入次數過多，請稍後再試',
+      empty:'請輸入帳號和密碼',
+      invalid_credentials:'帳號或密碼不正確，請確認後再試',
+      failed:'登入失敗，請重新嘗試',
+      check:'登入後仍停留在登入頁，請確認瀏覽器允許 Cookie、網站使用 HTTPS，並排除 Cloudflare 快取',
+      https:'請先啟用 HTTPS 安全連線才能登入',
+    };
+    const signupMessages = {
+      sent:'註冊申請已送出，請至信箱開啟 Finance 的設定密碼郵件，並檢查垃圾信件匣',
+      invited:'受邀帳號已建立並加入家庭，請使用剛設定的帳號與密碼登入',
+      mail_failed:'帳號可能已建立，但寄送設定密碼郵件失敗。請聯絡網站管理員檢查郵件伺服器。',
+      closed:'目前未開放新帳號註冊',
+      expired:'註冊頁面已逾時，請重新整理',
+      limited:'註冊次數過多，請稍後再試',
+      invalid:'帳號名稱或 Email 不正確，或帳號已經存在',
+      failed:'建立帳號時發生問題，請稍後重試',
+    };
+    let contents = '';
+    if (inv) {
+      contents += '<div class="wff-invite-summary"><div class="wff-kicker">FAMILY INVITATION</div>'+
+        '<h2>'+e(inv.household_name)+'</h2><p>你受邀加入這個家庭空間，可一起管理家庭與公司收支。</p>'+
+        '<dl><div><dt>受邀 Email</dt><dd>'+e(inv.email)+'</dd></div>'+
+        '<div><dt>權限</dt><dd>'+(inv.role==='editor'?'可編輯':'僅檢視')+'</dd></div></dl></div>';
+    }
+    contents += authAlert(S.authError || loginMessages[loginStatus],true);
+    contents += authAlert(signupMessages[signupStatus], !['sent','invited'].includes(signupStatus));
+    contents += '<form method="post" action="'+e(config.loginAction)+'" class="wff-form wff-login-form" autocomplete="on">'+
       '<input type="hidden" name="action" value="wff_login">'+
       '<input type="hidden" name="wff_login_nonce" value="'+e(config.loginNonce)+'">'+
       '<input type="hidden" name="wff_invite" value="'+e(inviteToken||'')+'">'+
-      '<label>使用者帳號或電子郵件<input name="log" required autocomplete="username" placeholder="輸入登入帳號"></label>'+
+      '<label>使用者帳號或電子郵件<input name="log" required autocomplete="username" value="'+e(S.loginDraft)+'" placeholder="輸入登入帳號"></label>'+
       '<label>密碼<input name="pwd" type="password" required autocomplete="current-password" placeholder="輸入密碼"></label>'+
       '<label class="wff-remember"><input name="rememberme" type="checkbox" value="1"> 保持登入</label>'+
-      '<button class="wff-button wff-primary" type="submit">登入 Finance →</button>'+
-      '</form>'+
-      '<div class="wff-login-help"><a href="'+e(config.lostPassword)+'">忘記密碼？</a></div>'+
-      (!inv && config.registrationEnabled ?
-        '<div class="wff-auth-register"><h2>第一次使用 Finance？</h2>'+
-        '<p>免費建立帳號，不需信用卡，也沒有訂閱機制。完成後請查看 Email 設定密碼。</p>'+
+      '<button class="wff-button wff-primary" type="submit">登入 Finance →</button></form>'+
+      '<div class="wff-login-help"><a href="'+e(config.lostPassword)+'">忘記密碼？</a>'+
+      '<button type="button" class="wff-textbtn" data-action="fallback-login">使用備援登入</button></div>';
+    if(inv) {
+      contents += '<div class="wff-auth-register"><h2>還沒有帳號？</h2>'+
+        '<p>這份邀請已指定你的 Email，可直接免費建立 Finance 帳號，並自動加入家庭。</p>'+
+        '<form id="wff-signup" class="wff-form"><label>登入帳號<input required name="username" minlength="3" autocomplete="username"></label>'+
+        '<label>密碼（至少 12 字）<input required name="password" minlength="12" type="password" autocomplete="new-password"></label>'+
+        '<button class="wff-button" type="submit">建立帳號並加入家庭 →</button></form></div>';
+    } else if (config.registrationEnabled) {
+      contents += '<div class="wff-auth-register"><h2>第一次使用 Finance？</h2>'+
+        '<p>免費建立帳號，不需信用卡或訂閱。註冊後會收到設定密碼的 Email。</p>'+
         '<form method="post" action="'+e(config.loginAction)+'" class="wff-form">'+
         '<input type="hidden" name="action" value="wff_register">'+
         '<input type="hidden" name="wff_register_nonce" value="'+e(config.registerNonce)+'">'+
         '<label>使用者名稱<input name="username" minlength="3" maxlength="50" autocomplete="username" required></label>'+
         '<label>電子郵件<input name="email" type="email" autocomplete="email" required></label>'+
         '<label class="wff-honeypot" aria-hidden="true">Fax<input name="fax_number" type="text" tabindex="-1" autocomplete="off"></label>'+
-        '<button class="wff-button" type="submit">申請免費帳號 →</button>'+
-        '</form></div>' : '')+
-      (new URLSearchParams(location.search).get('wff_signup') ?
-        '<div class="wff-note" role="status">'+
-        (new URLSearchParams(location.search).get('wff_signup')==='sent'?'註冊申請已送出，若帳號已建立，請收取設定密碼的 Email；如未收到請確認垃圾信件與網站寄信設定。':
-         '註冊未完成，請檢查帳號、Email 是否可用，或稍後再試。')+
-        '</div>' : '')+
-      (new URLSearchParams(location.search).get('wff_login') ?
-        '<div role="alert" class="wff-note">登入未成功，請檢查帳號與密碼；嘗試太多次請稍後再試</div>' : '')+
-      '<div class="wff-auth-foot">PRIVATE DATA · NO SUBSCRIPTION · MADE WITH WUMETAX</div>'+
-      '</div></section>';
+        '<button class="wff-button" type="submit">申請免費帳號 →</button></form></div>';
+    }
+    return authFrame('SIGN IN', '你的家庭<br><span>財務指揮中心</span>',
+      '家庭支出、公司營運、信用卡與每月報表，全部放在一起管理。', contents);
+  }
+  function forgotView() {
+    const p=authParams();
+    const status = p.get('wff_forgot');
+    const messages = {
+      sent:'如果帳號存在，重設密碼信件已寄出。請檢查收件匣或垃圾信件匣。',
+      expired:'表單已過期，請重新整理後再次申請。',
+      limited:'寄送次數過多，請一小時後再試。',
+    };
+    const error=status && status!=='sent';
+    const content=authAlert(messages[status],error)+
+      authAlert(p.get('wff_reset')==='invalid'?'連結已失效或使用過，請重新申請一封重設密碼信。':'',true)+
+      '<form method="post" action="'+e(config.loginAction)+'" class="wff-form wff-login-form">'+
+      '<input type="hidden" name="action" value="wff_forgot">'+
+      '<input type="hidden" name="wff_forgot_nonce" value="'+e(config.forgotNonce)+'">'+
+      '<input type="hidden" name="wff_invite" value="'+e(inviteToken||'')+'">'+
+      '<label>使用者帳號或電子郵件<input name="account" autocomplete="username" required placeholder="請輸入註冊時的帳號或 Email"></label>'+
+      '<button class="wff-button wff-primary" type="submit">寄送重設密碼連結 →</button>'+
+      '</form><div class="wff-auth-back"><a href="'+e(authHome())+'">← 返回 Finance 登入</a></div>';
+    return authFrame('ACCOUNT SECURITY','忘記密碼<br><span>重新找回帳號</span>',
+      '輸入註冊帳號或 Email，我們會提供一組僅限一次使用的重設密碼連結。', content);
+  }
+  function resetView() {
+    const p=authParams(),status=p.get('wff_reset');
+    const code=p.get('wff_key')||'', user=p.get('wff_user')||'';
+    if(!code || !user) return forgotView();
+    const alert=authAlert(status==='expired'?'頁面已過期，請重新開啟信件中的連結':
+      status==='mismatch'?'兩次輸入的密碼不同，或密碼未達 12 字元':'',!!status);
+    const content=alert+
+      '<form method="post" action="'+e(config.loginAction)+'" class="wff-form wff-login-form">'+
+      '<input type="hidden" name="action" value="wff_reset">'+
+      '<input type="hidden" name="wff_reset_nonce" value="'+e(config.resetNonce)+'">'+
+      '<input type="hidden" name="wff_key" value="'+e(code)+'">'+
+      '<input type="hidden" name="wff_user" value="'+e(user)+'">'+
+      '<input type="hidden" name="wff_invite" value="'+e(inviteToken||'')+'">'+
+      '<label>新密碼（至少 12 字元）<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>'+
+      '<label>再次確認新密碼<input name="password_confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>'+
+      '<button class="wff-button wff-primary" type="submit">確認重設密碼 →</button></form>'+
+      '<div class="wff-auth-back"><a href="'+e(authHome())+'">← 返回 Finance 登入</a></div>';
+    return authFrame('ACCOUNT SECURITY','設定新密碼',
+      '完成設定後即可使用新密碼登入 Finance，不會刪除任何家庭或公司記帳資料。',content);
   }
   function invitationView() {
     const inv=S.invitation;
-    return '<section class="wff-auth"><div class="wff-auth-card"><div class="wff-kicker">FAMILY INVITATION</div>'+
-      '<h1>加入家庭<br><span>'+e(inv.household_name)+'</span></h1>'+
-      '<p>此邀請授予「'+(inv.role==='editor'?'可編輯':'僅檢視')+'」權限，家庭與公司財務紀錄都會共用。</p>'+
-      '<div class="wff-note">邀請 Email：'+e(inv.email)+'</div>'+
-      simpleBtn('接受邀請並加入 →','accept-invite','wff-primary')+
-      '<p class="wff-small">請確認目前登入的是受邀的 Email 帳號。</p></div></section>';
+    const content='<div class="wff-invite-summary">'+
+      '<div class="wff-kicker">INVITATION DETAILS</div>'+
+      '<h2>'+e(inv.household_name)+'</h2>'+
+      '<dl><div><dt>受邀 Email</dt><dd>'+e(inv.email)+'</dd></div>'+
+      '<div><dt>加入權限</dt><dd>'+(inv.role==='editor'?'可查看及編輯':'僅檢視')+'</dd></div>'+
+      '<div><dt>有效期限（UTC）</dt><dd>'+e(inv.expires_at)+'</dd></div></dl></div>'+
+      '<p>加入後可以與家庭成員共同查看家庭和公司收支，不需要額外訂閱。</p>'+
+      '<div class="wff-auth-user">目前登入：'+e(config.user?.email||'')+'</div>'+
+      (config.user && config.user.email.toLowerCase()===inv.email.toLowerCase() ?
+        simpleBtn('接受邀請並加入家庭 →','accept-invite','wff-primary') :
+        '<div class="wff-auth-notice wff-auth-error">目前帳號的 Email 與邀請指定的 Email 不相符，請先使用受邀帳號登入。</div>'+
+        '<a class="wff-button" href="'+e(config.logout)+'">切換登入帳號 →</a>')+
+      '<div class="wff-auth-back"><a href="'+e(config.home)+'">返回 Finance</a></div>';
+    return authFrame('FAMILY INVITATION','加入家庭<br><span>一起管理財務</span>',
+      '請確認家庭名稱與受邀資訊，再接受這份邀請。',content);
+  }
+  function invalidInvitationView() {
+    return authFrame('FAMILY INVITATION','邀請連結無效',
+      '這份邀請可能已被使用、已過期，或連結不完整。',
+      authAlert(S.invitationError||'請向家庭管理員索取新的邀請連結。',true)+
+      '<div class="wff-auth-back"><a href="'+e(config.home)+'">返回 Finance 首頁 →</a></div>');
   }
   function welcome() {
     return '<section class="wff-auth"><div class="wff-auth-card"><div class="wff-kicker">LET’S BEGIN ★</div>'+
@@ -353,6 +444,10 @@
       '<button class="wff-modal-close" data-action="close-modal" aria-label="關閉" type="button">×</button></div>'+body+'</section></div>';
   }
   function render() {
+    const action=authParams().get('wff_action');
+    if (S.invitationError) { root.innerHTML=invalidInvitationView(); return; }
+    if (action==='forgot') { root.innerHTML=forgotView(); return; }
+    if (action==='reset') { root.innerHTML=resetView(); return; }
     if (!config.user) { root.innerHTML=loginView(); return; }
     if (S.invitation) { root.innerHTML=invitationView(); return; }
     if (!S.hid) { root.innerHTML=welcome(); return; }
@@ -399,6 +494,10 @@
     const act=target.dataset.action,id=Number(target.dataset.id);
     const item=S.transactions?.items.find(x=>Number(x.id)===id)||S.dashboard?.recent.find(x=>Number(x.id)===id);
     if(act==='toggle-nav'){ S.nav=!S.nav;render(); }
+    if(act==='fallback-login'){
+      const form=root.querySelector('.wff-login-form');
+      if(form){ form.submit(); }
+    }
     if(act==='close-modal'){ resetModal(); }
     if(act==='new-transaction'){openModal('transaction',{scope:'family',kind:'expense'});}
     if(act==='edit-transaction'&&item){openModal('transaction',item);}
@@ -447,14 +546,45 @@
       render();
     }
   });
-  root.addEventListener('submit',ev=>{
+  root.addEventListener('submit', ev => {
     const form=ev.target;
+    if(form.classList.contains('wff-login-form')){
+      // Only intercept the sign-in form. Lost-password, reset and
+      // registration forms must submit natively to WordPress.
+      if (form.querySelector('[name="action"]')?.value !== 'wff_login') return;
+      ev.preventDefault();
+      if(S.busy)return;
+      const data=getFormData(form);
+      S.busy=true;S.authError='';S.loginDraft=data.log||'';
+      const submit=form.querySelector('[type="submit"]');
+      if(submit){submit.disabled=true;submit.textContent='登入驗證中…';}
+      request('auth/login','POST',{
+        username:data.log,password:data.pwd,
+        remember:!!data.rememberme,nonce:config.loginNonce
+      }).then(result=>{
+        const url=new URL(config.login,location.origin);
+        url.searchParams.set('wff_login','check');
+        location.assign(url.toString());
+      }).catch(err=>{
+        S.authError=err.message||'無法完成登入，請確認網路連線後再試';
+        S.busy=false;render();
+      });
+      return;
+    }
+    const handled = ['wff-household-form','wff-signup','wff-transaction-form',
+      'wff-category-form','wff-account-form','wff-invite-form','wff-import-form'];
+    if(!handled.includes(form.id)) return;
     ev.preventDefault();
     if(form.id==='wff-household-form'){
       attempt(async()=>{const result=await request('households','POST',getFormData(form));await getHouseholds(result.id);show('家庭財務空間建立完成');});
     }
     if(form.id==='wff-signup'){
-      attempt(async()=>{const result=await request('invite/register','POST',{...getFormData(form),token:inviteToken});location.href=result.login;});
+      attempt(async()=>{
+        try {
+          const result=await request('invite/register','POST',{...getFormData(form),token:inviteToken});
+          location.href=result.login;
+        } catch(err) { S.authError=err.message;render(); }
+      });
     }
     if(form.id==='wff-transaction-form'){attempt(()=>submitTransaction(getFormData(form)));}
     if(form.id==='wff-category-form'){
@@ -479,7 +609,10 @@
   document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&S.modal)resetModal();});
   async function start() {
     try {
-      if (inviteToken) S.invitation=await request('invite/preview?token='+encodeURIComponent(inviteToken));
+      if (inviteToken) {
+        try { S.invitation=await request('invite/preview?token='+encodeURIComponent(inviteToken)); }
+        catch(err) { S.invitationError=err.message||'邀請已過期'; }
+      }
       if (!config.user) {render();return;}
       if (S.invitation) {render();return;}
       await getHouseholds();
