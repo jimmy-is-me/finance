@@ -97,7 +97,7 @@ final class WFF_Frontend {
             'registrationEnabled' => (bool) get_option('wff_registration_enabled', 1),
             'lostPassword' => add_query_arg('wff_action', 'forgot', $redirect),
             'useAjaxLogin' => true,
-            'logout' => wp_logout_url(self::app_url()),
+            'logout' => wp_logout_url($redirect),
             'home' => self::app_url(),
             'user' => is_user_logged_in() ? array(
                 'id' => get_current_user_id(),
