@@ -170,7 +170,7 @@ test('category ordering works for drag and touch/keyboard arrow controls', () =>
     assert.ok(js.includes(symbol), 'missing category sorting UI '+symbol);
   }
   assert.match(js,/categories\/reorder/);
-  assert.match(js,/const categories=S\.meta\.categories\.filter/);
+  assert.match(js,/const cats=\(S\.meta\?\.categories\|\|\[\]\)\.filter/);
   assert.match(css,/\.wff-category-sort-actions button/);
   assert.match(css,/max-width:520px/);
 });
