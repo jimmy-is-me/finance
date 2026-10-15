@@ -9,6 +9,9 @@ if (!defined('ABSPATH')) { exit; }
     <meta name="robots" content="noindex,nofollow,noarchive">
     <title>家庭財務管理 · WUMETAX Finance</title>
     <?php wp_head(); ?>
+    <!-- Finance has a dedicated favicon even when the WordPress site icon is unset. -->
+    <link rel="icon" type="image/svg+xml" sizes="any" href="<?php echo esc_url(WFF_URL . 'assets/images/finance-favicon.svg?v=' . rawurlencode(WFF_VERSION)); ?>">
+    <link rel="shortcut icon" href="<?php echo esc_url(WFF_URL . 'assets/images/finance-favicon.svg?v=' . rawurlencode(WFF_VERSION)); ?>">
 </head>
 <body <?php body_class('wff-standalone'); ?>>
 <?php wp_body_open(); ?>
