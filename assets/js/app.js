@@ -121,6 +121,7 @@
         '<div><dt>權限</dt><dd>'+(inv.role==='editor'?'可編輯':'僅檢視')+'</dd></div></dl></div>';
     }
     contents += authAlert(S.authError || loginMessages[loginStatus],true);
+    contents += authAlert(p.get('wff_reset')==='success'?'密碼已成功更新，請使用新密碼登入 Finance。':'');
     contents += authAlert(signupMessages[signupStatus], !['sent','invited'].includes(signupStatus));
     contents += '<form method="post" action="'+e(config.loginAction)+'" class="wff-form wff-login-form" autocomplete="on">'+
       '<input type="hidden" name="action" value="wff_login">'+
