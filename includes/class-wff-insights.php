@@ -116,13 +116,15 @@ final class WFF_Insights {
         $wallet_rank = array();
         $cards_rank = array();
         foreach ($usage ?: array() as $item) {
-            $channel = $item['wallet_type']==='mobile' ? 'mobile' : (
-                $item['funding_type']==='credit' ? 'credit' :
-                ($item['funding_type']==='bank' ? 'bank' :
-                ($item['funding_type']==='cash' ? 'cash' :
-                ($item['payment_method']==='card' ? 'credit' :
-                (in_array($item['payment_method'],array('mobile','bank','cash'),true) ?
-                    $item['payment_method'] : 'other'))))));
+            $channel = 'other';
+            if ($item['wallet_type'] === 'mobile') { $channel = 'mobile'; }
+            elseif ($item['funding_type'] === 'credit') { $channel = 'credit'; }
+            elseif ($item['funding_type'] === 'bank') { $channel = 'bank'; }
+            elseif ($item['funding_type'] === 'cash') { $channel = 'cash'; }
+            elseif ($item['payment_method'] === 'card') { $channel = 'credit'; }
+            elseif (in_array($item['payment_method'],array('mobile','bank','cash'),true)) {
+                $channel = $item['payment_method'];
+            }
             $amount = (float)$item['total'];
             $types[$channel] += $amount;
             $label = $item['wallet_type']==='mobile' ? $item['wallet_name'] :
