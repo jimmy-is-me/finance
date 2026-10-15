@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.2.0 — dedicated homepage & family finance */
+/* WUMETAX Finance v1.2.3 — payment tools and interactive analytics */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -6,12 +6,12 @@
   if (!root || !config) return;
   const views = [
     ['dashboard','總覽','▦'],['transactions','收支紀錄','↔'],
-    ['accounts','帳戶與信用卡','▣'],['categories','分類管理','▤'],
+    ['accounts','付款工具','▣'],['categories','分類管理','▤'],
     ['members','家庭成員','♧'],['import','資料匯入／匯出','⇅'],
     ['activity','操作紀錄','◷']
   ];
   const S = {
-    view: 'dashboard', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
+    view: 'dashboard', accountTab:'all', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
     scope: 'all', kind: 'all', page: 1, households: [], hid: 0, meta: null,
     dashboard: null, transactions: null, activities: [], modal: null,
     draft: {}, busy: false, nav: false, notice: '', authError: '', loginDraft: '', invitationError: '', csv: '', csvName: '',
@@ -247,7 +247,7 @@
   function footer() {
     return '</main><footer class="wff-footer">© WUMETAX FINANCE · 私有財務資料儲存在 WordPress</footer></div></div>'+
       '<nav class="wff-mobile-bottom" aria-label="手機快速導覽">'+
-      [['dashboard','總覽','⌂'],['transactions','記帳','≡'],['accounts','帳戶','▣'],['members','家庭','♧']]
+      [['dashboard','總覽','⌂'],['transactions','記帳','≡'],['accounts','付款','▣'],['members','家庭','♧']]
         .map(([key,name,symbol])=>'<button type="button" data-view="'+key+'" class="'+(S.view===key?'active':'')+'" aria-current="'+(S.view===key?'page':'false')+'"><span aria-hidden="true">'+symbol+'</span>'+name+'</button>').join('')+
       '<button type="button" data-action="toggle-nav" aria-expanded="'+(S.nav?'true':'false')+'"><span aria-hidden="true">⋯</span>更多</button></nav>';
   }
@@ -309,7 +309,7 @@
         '<th>日期</th><th>類型</th><th>分類／備註</th><th>帳戶</th><th>記帳人</th><th>金額</th>'+(canEdit()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
         d.items.map(x=>'<tr><td>'+e(x.occurred_on)+'</td><td><span class="wff-pill '+(x.kind==='income'?'mint':x.kind==='expense'?'pink':'violet')+'">'+scopeName(x.scope)+' · '+readable(x.kind)+'</span></td>'+
           '<td><b>'+e(x.category_name||readable(x.kind))+'</b><small>'+e(x.note||'—')+'</small></td>'+
-          '<td>'+e(x.account_name||'—')+(x.destination_account_name?' → '+e(x.destination_account_name):'')+'</td>'+
+          '<td>'+e(x.payment_channel_name ? x.payment_channel_name+' · '+(x.account_name||'扣款來源未指定') : (x.account_name||'—'))+(x.destination_account_name?' → '+e(x.destination_account_name):'')+'</td>'+
           '<td>'+e(x.creator_name||'—')+'</td>'+
           '<td><strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></td>'+
           (canEdit()?'<td><button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
@@ -319,19 +319,43 @@
         '<span>'+e(d.page)+' / '+e(d.pages)+' 頁</span>'+
         '<button class="wff-button" data-action="page-next" '+(d.page>=d.pages?'disabled':'')+'>下一頁 →</button></div></section>';
   }
+  const toolTypes=[['all','全部'],['credit','信用卡'],['mobile','行動支付'],['cash','現金'],['bank','銀行']];
+  const accountLabel=type=>({credit:'信用卡',mobile:'行動支付',cash:'現金',bank:'銀行'})[type]||type;
+  const methodName=type=>({cash:'現金',card:'信用卡',mobile:'行動支付',bank:'銀行帳戶',other:'其他'})[type]||type;
+  function activeAccounts(type) {
+    return (S.meta?.accounts||[]).filter(a=>(!type||a.type===type)&&Number(a.enabled)!==0);
+  }
   function accounts() {
-    const accounts=S.meta.accounts||[],cards=S.dashboard.cards||[];
-    return '<div class="wff-pagehead"><div><div class="wff-kicker">ACCOUNTS / MONEY</div>'+
-      '<h1>帳戶與 <span class="wff-highlight">信用卡</span></h1>'+
-      '<p>記錄付款來源，信用卡還款使用「轉帳」，不會再次增加支出。</p></div>'+
-      (canEdit()?simpleBtn('＋ 新增帳戶','new-account','wff-primary'):'')+'</div>'+
-      '<div class="wff-account-grid">'+accounts.map(a=>'<article class="wff-account-box"><div class="wff-account-type">'+
-        (a.type==='credit'?'CREDIT CARD':a.type==='bank'?'BANK ACCOUNT':'CASH ACCOUNT')+'</div>'+
-        '<h2>'+e(a.name)+'</h2><div class="wff-account-icon">'+(a.type==='credit'?'▣':a.type==='bank'?'▤':'◉')+'</div>'+
-        (a.type==='credit'?'<div class="wff-account-balance">未清償淨額 '+money(cards.find(c=>Number(c.id)===Number(a.id))?.outstanding||0)+'</div>':
-         '<p class="wff-small">帳戶已建立，可在記帳時選取</p>')+
-        (canEdit()?'<button class="wff-textbtn" data-action="edit-account" data-id="'+e(a.id)+'">編輯帳戶 ↗</button>':'')+'</article>').join('')+'</div>'+
-      '<div class="wff-note">信用卡金額依記錄的刷卡支出、退款及轉入還款計算，不含銀行實際帳單提供的利息、循環費、前期未匯入餘額；請與發卡銀行帳單核對。</div>';
+    const all=S.meta.accounts||[],cards=S.dashboard?.cards||[];
+    const selected=S.accountTab||'all';
+    const filtered=all.filter(a=>selected==='all'||a.type===selected);
+    const tabs=toolTypes.map(([id,label])=>'<button type="button" class="wff-tool-tab '+(selected===id?'active':'')+
+      '" data-action="tool-tab" data-tab="'+id+'">'+label+'<small>'+all.filter(a=>id==='all'||a.type===id).length+'</small></button>').join('');
+    const cardsHtml=filtered.map(a=>{
+      const outstanding=cards.find(x=>Number(x.id)===Number(a.id));
+      const funding=all.find(x=>Number(x.id)===Number(a.funding_account_id));
+      const detail=a.type==='credit' ?
+       '<div class="wff-account-details"><span>結帳日　'+(a.statement_day?'每月 '+e(a.statement_day)+' 日':'未設定')+'</span>'+
+       '<span>繳款日　'+(a.due_day?'每月 '+e(a.due_day)+' 日':'未設定')+'</span>'+
+       '<span>已記錄未清償淨額 '+money(outstanding?.outstanding||0)+'</span></div>' :
+       a.type==='mobile' ?
+       '<div class="wff-account-details"><span>預設扣款　'+e(funding?.name||'未指定')+'</span></div>' :
+       '<div class="wff-account-details"><span>付款工具已建立，可於記帳時選取</span></div>';
+      return '<article class="wff-account-box wff-tool-card"><div class="wff-account-type">'+
+        e(accountLabel(a.type))+' / '+(Number(a.enabled)===0?'已停用':'使用中')+'</div>'+
+        '<h2>'+e(a.name)+'</h2>'+
+        (a.brand?'<div class="wff-tool-brand">'+e(a.brand)+'</div>':'')+
+        detail+(a.notes?'<p class="wff-small">'+e(a.notes)+'</p>':'')+
+        (canEdit()?'<button class="wff-textbtn" data-action="edit-account" data-id="'+e(a.id)+'" type="button">編輯付款工具 ↗</button>':'')+
+        '</article>';
+    }).join('');
+    return '<div class="wff-pagehead"><div><div class="wff-kicker">PAYMENT TOOLS / MANAGE</div>'+
+      '<h1>我的 <span class="wff-highlight">付款工具</span></h1>'+
+      '<p>管理多張信用卡、行動支付、現金及銀行帳戶；停用後歷史紀錄仍會保留。</p></div>'+
+      (canEdit()?simpleBtn('＋ 新增付款工具','new-account','wff-primary'):'')+'</div>'+
+      '<div class="wff-tool-tabs" role="group" aria-label="篩選付款工具">'+tabs+'</div>'+
+      '<div class="wff-account-grid">'+(cardsHtml||'<div class="wff-chart-empty">尚無此類付款工具，請點右上角新增。</div>')+'</div>'+
+      '<div class="wff-note">行動支付是付款「通路」，可綁定現金、銀行或信用卡作為扣款來源。透過行動支付刷卡時仍只記一次支出；信用卡未清償金額為依已登錄交易推算，非銀行正式帳單。</div>';
   }
   function categories() {
     const cats=S.meta.categories||[];
@@ -425,11 +449,24 @@
         field('標籤顏色','<input type="color" name="color" value="'+e(d.color||'#FFD93D')+'">')+
         '<button class="wff-button wff-primary" type="submit">儲存分類 ✓</button></form>';
     } else if(type==='account'){
-      title=d.id?'編輯帳戶':'新增帳戶／信用卡';
+      const kind=d.type||'credit';
+      const sources=(S.meta.accounts||[]).filter(a=>['cash','bank','credit'].includes(a.type) && Number(a.id)!==Number(d.id));
+      title=d.id?'編輯付款工具':'新增付款工具';
       body='<form class="wff-form" id="wff-account-form">'+
-        field('名稱','<input name="name" maxlength="80" required value="'+e(d.name||'')+'" placeholder="例：○○銀行 Visa">')+
-        field('帳戶類型','<select name="type">'+selectValues([['cash','現金'],['bank','銀行'],['credit','信用卡']],d.type||'bank')+'</select>')+
-        '<button class="wff-button wff-primary" type="submit">儲存帳戶 ✓</button></form>';
+        field('名稱','<input name="name" maxlength="80" required value="'+e(d.name||'')+'" placeholder="例如：國泰 CUBE 卡、LINE Pay">')+
+        field('付款工具類型','<select name="type">'+selectValues([['credit','信用卡'],['mobile','行動支付'],['cash','現金'],['bank','銀行帳戶']],kind)+'</select>')+
+        '<div class="wff-form-grid">'+
+        field('發卡銀行／服務品牌','<input name="brand" maxlength="100" value="'+e(d.brand||'')+'" placeholder="選填">')+
+        field('顯示排序','<input name="sort_order" type="number" min="0" max="100000" value="'+e(d.sort_order||0)+'">')+
+        '</div>'+
+        (kind==='credit'?'<div class="wff-form-grid">'+
+          field('每月結帳日','<input name="statement_day" type="number" min="1" max="31" value="'+e(d.statement_day||'')+'" placeholder="1–31，選填">')+
+          field('每月繳款日','<input name="due_day" type="number" min="1" max="31" value="'+e(d.due_day||'')+'" placeholder="1–31，選填">')+
+          '</div>':'')+
+        (kind==='mobile'?field('預設扣款來源','<select name="funding_account_id">'+options(sources,d.funding_account_id,'不指定，每次記帳時選擇')+'</select>'):'')+
+        field('備註','<input name="notes" maxlength="255" value="'+e(d.notes||'')+'" placeholder="選填">')+
+        '<label class="wff-checkline"><input type="checkbox" name="enabled" value="1" '+(Number(d.enabled)===0?'':'checked')+'> 啟用此付款工具</label>'+
+        '<button class="wff-button wff-primary" type="submit">儲存付款工具 ✓</button></form>';
     } else if(type==='invite'){
       title='邀請家庭成員';
       body='<div class="wff-note">受邀者加入後可共同查看家庭與公司收支。編輯者可修改資料，唯讀者只能查看。</div>'+
@@ -478,7 +515,7 @@
   async function exportCSV() {
     const scope=document.getElementById('wff-export-scope')?.value||'all';
     const response=await request(path('export?scope='+encodeURIComponent(scope)));
-    const heads=['日期','範圍','類型','分類','金額','備註','付款方式','帳戶','轉入帳戶'];
+    const heads=['日期','範圍','類型','分類','金額','備註','付款方式','帳戶','轉入帳戶','付款通路'];
     const lines=[heads.join(','),...response.items.map(x=>heads.map(h=>encodeCSVCell(x[h])).join(','))];
     const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
     const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -510,7 +547,8 @@
     if(act==='delete-category'&&confirm('確定刪除此分類？已使用的分類無法刪除。')) {
       attempt(async()=>{await request(path('categories/'+id),'DELETE');await reload();show('已刪除分類');});
     }
-    if(act==='new-account'){openModal('account');}
+    if(act==='new-account'){openModal('account',{type:'credit',enabled:1});}
+    if(act==='tool-tab'){S.accountTab=target.dataset.tab||'all';render();}
     if(act==='edit-account'){openModal('account',S.meta.accounts.find(x=>Number(x.id)===id));}
     if(act==='new-invite'){openModal('invite');}
     if(act==='remove-member'&&confirm('確定移除這位家庭成員？')) {
@@ -541,9 +579,15 @@
       if(file.size>1048576) {show('CSV 不可超過 1MB');return;}
       file.text().then(text=>{S.csv=text;S.csvName=file.name;S.importPreview=null;render();}).catch(()=>show('CSV 讀取失敗'));
     }
-    if(S.modal==='transaction' && ['scope','kind'].includes(t.name)){
+    if(S.modal==='account' && t.name==='type') {S.draft={...S.draft,...getFormData(t.form),enabled:t.form.querySelector('[name="enabled"]').checked?1:0};render();return;}
+    if(S.modal==='transaction' && ['scope','kind','payment_method','payment_channel_id'].includes(t.name)) {
       S.draft={...S.draft,...getFormData(t.form)};
-      S.draft.category_id='';
+      if(['scope','kind'].includes(t.name)) S.draft.category_id='';
+      if(t.name==='payment_method') {S.draft.account_id='';S.draft.payment_channel_id='';}
+      if(t.name==='payment_channel_id') {
+        const wallet=(S.meta.accounts||[]).find(a=>Number(a.id)===Number(t.value));
+        S.draft.account_id=wallet?.funding_account_id||'';
+      }
       render();
     }
   });
@@ -593,7 +637,7 @@
         resetModal();await reload();show('分類儲存成功');});
     }
     if(form.id==='wff-account-form'){
-      attempt(async()=>{const id=S.draft.id;await request(path('accounts'+(id?'/'+id:'')),id?'PUT':'POST',getFormData(form));
+      attempt(async()=>{const id=S.draft.id;const accountData=getFormData(form);accountData.enabled=form.querySelector('[name="enabled"]').checked?1:0;await request(path('accounts'+(id?'/'+id:'')),id?'PUT':'POST',accountData);
         resetModal();await reload();show('帳戶儲存成功');});
     }
     if(form.id==='wff-invite-form'){
