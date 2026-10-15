@@ -620,6 +620,40 @@
         '</div>'+
         '<div id="wff-transaction-dynamic">'+transactionFields(d)+'</div>'+
         '<button class="wff-button wff-primary" type="submit">儲存記帳 ✓</button></form>';
+    } else if(type==='loan'){
+      title=d.id?'編輯貸款':'新增貸款';
+      body='<form id="wff-loan-form" class="wff-form">'+
+       '<div class="wff-note">建立一次，每個月自動延續應繳日期。請填入「開始追蹤時」的未償本金與剩餘期數，不必重建過去所有繳款。</div>'+
+       field('貸款名稱','<input name="name" value="'+e(d.name||'')+'" maxlength="120" placeholder="例如：CX-5 車貸、房貸" required>')+
+       '<div class="wff-form-grid">'+
+       field('貸款機構','<input name="lender" value="'+e(d.lender||'')+'" maxlength="120" placeholder="銀行／融資公司">')+
+       field('所屬帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+'</div>'+
+       '<div class="wff-form-grid">'+
+       field('開始追蹤的本金餘額','<input name="opening_principal" type="number" step=".01" min=".01" required value="'+e(d.opening_principal||'')+'" placeholder="例如 500000">')+
+       field('年利率（%）','<input name="annual_rate" type="number" step=".0001" min="0" max="80" required value="'+e(d.annual_rate??2.295)+'">')+'</div>'+
+       '<div class="wff-form-grid">'+
+       field('剩餘期數（月）','<input name="installments" type="number" min="1" max="600" required value="'+e(d.installments||60)+'">')+
+       field('第一期扣款日期','<input name="first_due_on" type="date" required value="'+e(d.first_due_on||new Date().toLocaleDateString('sv-SE'))+'">')+'</div>'+
+       field('每月應繳（選填）','<input name="monthly_payment" type="number" step=".01" min="0" value="'+e(Number(d.monthly_payment)||'')+'" placeholder="留空依等額本息估算">')+
+       '<div class="wff-note">不填時依本金、年利率與期數試算；銀行帳單若已有固定月繳金額，建議直接填入，以銀行提供金額為準。</div>'+
+       field('貸款狀態','<select name="status">'+selectValues([['active','追蹤中'],['closed','已結束／不再追蹤']],d.status||'active')+'</select>')+
+       field('備註','<input name="notes" maxlength="255" value="'+e(d.notes||'')+'" placeholder="例如：10/5 每月自動扣款">')+
+       '<button type="submit" class="wff-button wff-primary">儲存貸款 ✓</button></form>';
+    } else if(type==='loan-payment'){
+      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===Number(d.loan_id));
+      const entry=(loan?.schedule||[]).find(x=>Number(x.number)===Number(d.installment_no));
+      title='登錄第 '+e(d.installment_no)+' 期繳款';
+      body='<form id="wff-loan-payment-form" class="wff-form">'+
+       '<div class="wff-note">'+e(loan?.name||'貸款')+' · 預定 '+e(entry?.due_on?.replaceAll('-','/')||'')+
+       ' · 應繳估算 '+money(entry?.scheduled_amount||0)+'。若已在「收支紀錄」記過支出，這裡不會再記一次。</div>'+
+       '<input type="hidden" name="installment_no" value="'+e(d.installment_no)+'">'+
+       '<div class="wff-form-grid">'+
+       field('實際繳款日','<input name="paid_on" type="date" required value="'+e(entry?.paid_on||new Date().toLocaleDateString('sv-SE'))+'">')+
+       field('本期實際繳款金額','<input name="paid_amount" type="number" min=".01" step=".01" required value="'+e(entry?.paid_amount||entry?.scheduled_amount||'')+'">')+'</div>'+
+       field('額外提前償還本金（選填）','<input name="extra_principal" type="number" min="0" step=".01" value="'+e(entry?.extra_principal||'0')+'">')+
+       field('備註','<input name="note" maxlength="255" value="'+e(entry?.note||'')+'" placeholder="例如：自動扣款、提前還本">')+
+       '<div class="wff-note">額外還本金與每月應繳額分開記錄；若銀行將超額繳款抵充未來帳單，請以實際銀行明細為準。</div>'+
+       '<button type="submit" class="wff-button wff-primary">確認登錄繳款 ✓</button></form>';
     } else if(type==='category'){
       title=d.id?'編輯分類':'新增分類';
       body='<form class="wff-form" id="wff-category-form">'+
