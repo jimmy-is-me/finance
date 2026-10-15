@@ -339,3 +339,39 @@ body.wff-dialog-open{overflow:hidden}
     grid-template-columns:minmax(0,1fr);
   }
 }
+
+
+/* v1.2.2 Unified Finance account access, password recovery and family invitation. */
+#wff-app .wff-auth-flow{max-width:620px}
+#wff-app .wff-auth-flow .wff-kicker{font-size:11px;letter-spacing:.1em}
+#wff-app .wff-auth-flow h1{font-size:clamp(31px,5vw,48px);line-height:1.3;overflow-wrap:anywhere}
+#wff-app .wff-auth-flow h2{font-size:clamp(19px,3vw,24px);line-height:1.45}
+#wff-app .wff-auth-flow .wff-form{gap:17px}
+#wff-app .wff-auth-flow .wff-form label:not(.wff-honeypot):not(.wff-remember){display:grid;gap:8px;line-height:1.55}
+#wff-app .wff-auth-flow .wff-form label input:not([type="checkbox"]){min-height:54px;height:54px;padding:11px 14px;line-height:normal;box-shadow:none;border:1px solid #000}
+#wff-app .wff-auth-flow .wff-form .wff-button{min-height:54px;width:100%}
+#wff-app .wff-auth-notice{border:1px solid #000;padding:13px 15px;background:#f5f5f5;font-size:13px;line-height:1.8;margin:17px 0}
+#wff-app .wff-auth-notice.wff-auth-error{background:#fff;border-left:4px solid #000}
+#wff-app .wff-auth-back{border-top:1px solid #ddd;padding:19px 0 4px;margin-top:21px;font-size:13px}
+#wff-app .wff-auth-back a{text-decoration:underline;text-underline-offset:3px}
+#wff-app .wff-login-help{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:15px 0 8px}
+#wff-app .wff-login-help .wff-textbtn{font-size:12px;font-weight:400;color:#525252}
+#wff-app .wff-invite-summary{border:1px solid #000;padding:22px 20px;margin:20px 0;background:#fff}
+#wff-app .wff-invite-summary h2{margin:8px 0 14px;padding-bottom:14px;border-bottom:2px solid #000;overflow-wrap:anywhere}
+#wff-app .wff-invite-summary p{font-size:13px;color:#525252;line-height:1.8}
+#wff-app .wff-invite-summary dl{margin:0;display:grid;gap:0}
+#wff-app .wff-invite-summary dl>div{display:grid;grid-template-columns:minmax(98px,1fr) minmax(0,2fr);gap:10px;padding:12px 0;border-bottom:1px solid #e5e5e5;font-size:13px}
+#wff-app .wff-invite-summary dl>div:last-child{border-bottom:0}
+#wff-app .wff-invite-summary dt{color:#525252}
+#wff-app .wff-invite-summary dd{margin:0;font-weight:600;text-align:right;overflow-wrap:anywhere}
+#wff-app .wff-auth-user{border-top:1px solid #e5e5e5;border-bottom:1px solid #e5e5e5;padding:12px 0;margin:17px 0;font-size:13px;overflow-wrap:anywhere}
+#wff-app .wff-auth-flow .wff-auth-register{margin-top:25px}
+#wff-app .wff-auth-flow .wff-auth-register .wff-form{margin-top:12px}
+@media(max-width:520px){
+  #wff-app .wff-auth{padding:16px 12px}
+  #wff-app .wff-auth-card{padding:22px 18px}
+  #wff-app .wff-auth-flow h1{font-size:32px}
+  #wff-app .wff-invite-summary{padding:15px}
+  #wff-app .wff-invite-summary dl>div{grid-template-columns:1fr;gap:2px}
+  #wff-app .wff-invite-summary dd{text-align:left}
+}
