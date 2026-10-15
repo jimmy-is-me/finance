@@ -52,6 +52,8 @@ final class WFF_Insights {
 
         // Last 30 days ending on selected month's final day, not today's clock.
         $last = $date->modify('last day of this month');
+        $today = new DateTimeImmutable('today', wp_timezone());
+        if ($last > $today) { $last = $today; }
         $first = $last->modify('-29 days');
         $daily = array();
         for ($i=0; $i<30; $i++) {
@@ -164,7 +166,17 @@ final class WFF_Insights {
                 'outstanding'=>(float)$card['outstanding'],
             );
         }
+        $biggest = $wpdb->get_row($wpdb->prepare(
+            "SELECT occurred_on,amount,note FROM $t WHERE household_id=%d
+             AND kind='expense' AND occurred_on LIKE %s
+             ORDER BY amount DESC,id DESC LIMIT 1", $hid, $month.'%'
+        ), ARRAY_A);
         return array(
+            'biggest_expense'=>$biggest ? array(
+                'date'=>$biggest['occurred_on'],
+                'amount'=>(float)$biggest['amount'],
+                'note'=>$biggest['note']
+            ) : null,
             'monthly'=>array_values($months),
             'last30'=>array_values($daily),
             'radar'=>$radar_out,
