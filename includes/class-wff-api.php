@@ -144,7 +144,11 @@ final class WFF_API {
         $a = WFF_Storage::table('accounts');
         $m = WFF_Storage::table('members');
         $users = $wpdb->users;
+        $h = WFF_Storage::table('households');
+        $member_limit = (int) $wpdb->get_var($wpdb->prepare("SELECT member_limit FROM $h WHERE id=%d", $hid));
+        $member_limit = max(1, $member_limit);
         return array(
+            'member_limit' => $member_limit,
             'role' => $role,
             'categories' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $c WHERE household_id=%d ORDER BY scope,kind,sort_order ASC,id ASC", $hid), ARRAY_A),
             'accounts' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $a WHERE household_id=%d ORDER BY sort_order,id", $hid), ARRAY_A),
@@ -613,6 +617,11 @@ final class WFF_API {
         $email = sanitize_email($r->get_param('email'));
         $member_role = sanitize_key($r->get_param('role'));
         if (!is_email($email) || !in_array($member_role,array('editor','viewer'),true)) { return self::error('請輸入正確 Email 和角色'); }
+        $capacity = self::household_capacity($hid, true);
+        if (is_wp_error($capacity)) { return $capacity; }
+        if ($capacity['available'] <= 0) {
+            return self::error('家庭成員（含待接受邀請）已達 '.$capacity['limit'].' 位上限，請聯絡網站管理員開通更多名額',403);
+        }
         $existing = get_user_by('email',$email);
         if ($existing) {
             $m = WFF_Storage::table('members');
@@ -634,6 +643,31 @@ final class WFF_API {
         $sent = WFF_Mail::invitation($email, $household_name ?: '家庭財務', $member_role, $link);
         WFF_Storage::activity($hid,'create_invite',0,$email);
         return array('link'=>$link,'email_sent'=>(bool)$sent,'expires_at'=>$expires);
+    }
+
+    private static function household_capacity($hid, $reserve_pending = false) {
+        global $wpdb;
+        $h = WFF_Storage::table('households');
+        $m = WFF_Storage::table('members');
+        $i = WFF_Storage::table('invites');
+        $limit = (int) $wpdb->get_var($wpdb->prepare("SELECT member_limit FROM $h WHERE id=%d", $hid));
+        if ($limit < 1) { return self::error('找不到此家庭',404); }
+        $joined = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $m WHERE household_id=%d", $hid));
+        $reserved = $reserve_pending ? (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $i WHERE household_id=%d AND accepted_at IS NULL AND expires_at>%s",
+            $hid, current_time('mysql',true)
+        )) : 0;
+        return array('limit'=>$limit,'joined'=>$joined,'reserved'=>$reserved,
+            'available'=>$limit-$joined-$reserved);
+    }
+
+    private static function capacity_lock($hid) {
+        global $wpdb;
+        $name = 'wff_member_' . substr(md5($wpdb->prefix . ':' . $hid), 0, 40);
+        if ((int) $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 5)', $name)) !== 1) {
+            return self::error('家庭成員名額正在更新，請稍後重試', 409);
+        }
+        return $name;
     }
 
     private static function valid_invite($token) {
@@ -658,19 +692,50 @@ final class WFF_API {
 
     private static function finish_invite($invite,$uid) {
         global $wpdb;
-        $i = WFF_Storage::table('invites');
-        $m = WFF_Storage::table('members');
-        $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM $m WHERE household_id=%d AND user_id=%d",$invite['household_id'],$uid));
-        if (!$exists) {
-            $ok = $wpdb->insert($m,array(
-                'household_id'=>$invite['household_id'],'user_id'=>$uid,
-                'role'=>$invite['role'],'joined_at'=>current_time('mysql',true)
+        $hid = (int) $invite['household_id'];
+        $lock = self::capacity_lock($hid);
+        if (is_wp_error($lock)) { return $lock; }
+        try {
+            // Recheck invitation state under the same household lock.
+            $i = WFF_Storage::table('invites');
+            $m = WFF_Storage::table('members');
+            $fresh = $wpdb->get_row($wpdb->prepare(
+                "SELECT id,accepted_at,expires_at,role FROM $i WHERE id=%d AND household_id=%d",
+                $invite['id'], $hid
+            ), ARRAY_A);
+            if (!$fresh || $fresh['accepted_at'] !== null ||
+                strtotime($fresh['expires_at'].' UTC') <= time()) {
+                return self::error('邀請已使用或已過期',410);
+            }
+            $exists = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM $m WHERE household_id=%d AND user_id=%d", $hid, $uid
             ));
-            if (!$ok) { return self::error('加入家庭失敗',500); }
+            if (!$exists) {
+                $capacity = self::household_capacity($hid);
+                if (is_wp_error($capacity)) { return $capacity; }
+                if ($capacity['available'] <= 0) {
+                    return self::error('家庭成員已達 '.$capacity['limit'].' 位上限，請聯絡網站管理員開通更多名額',403);
+                }
+            }
+            $wpdb->query('START TRANSACTION');
+            if (!$exists) {
+                $ok = $wpdb->insert($m, array(
+                    'household_id'=>$hid,'user_id'=>$uid,
+                    'role'=>$fresh['role'],'joined_at'=>current_time('mysql',true)
+                ));
+                if (!$ok) { $wpdb->query('ROLLBACK'); return self::error('加入家庭失敗',500); }
+            }
+            $used = $wpdb->query($wpdb->prepare(
+                "UPDATE $i SET accepted_at=%s WHERE id=%d AND accepted_at IS NULL",
+                current_time('mysql',true), $invite['id']
+            ));
+            if ($used !== 1) { $wpdb->query('ROLLBACK'); return self::error('邀請已使用',409); }
+            $wpdb->query('COMMIT');
+            WFF_Storage::activity($hid,'accept_invite',$uid);
+            return array('joined'=>true,'household_id'=>$hid);
+        } finally {
+            $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock));
         }
-        $wpdb->update($i,array('accepted_at'=>current_time('mysql',true)),array('id'=>$invite['id'],'accepted_at'=>null));
-        WFF_Storage::activity($invite['household_id'],'accept_invite',$uid);
-        return array('joined'=>true,'household_id'=>(int)$invite['household_id']);
     }
 
     public static function invite_accept($r) {
@@ -695,6 +760,11 @@ final class WFF_API {
             return self::error('帳號至少 3 字，密碼至少 12 字');
         }
         if (username_exists($username) || email_exists($invite['email'])) { return self::error('帳號已存在，請登入後接受邀請',409); }
+        $cap = self::household_capacity((int)$invite['household_id']);
+        if (is_wp_error($cap)) { return $cap; }
+        if ($cap['available'] <= 0) {
+            return self::error('家庭成員已達 '.$cap['limit'].' 位上限，請聯絡網站管理員開通',403);
+        }
         $uid = wp_create_user($username,$password,$invite['email']);
         if (is_wp_error($uid)) { return self::error($uid->get_error_message()); }
         wp_update_user(array('ID'=>$uid,'display_name'=>$username,'role'=>'subscriber'));
