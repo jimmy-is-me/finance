@@ -146,7 +146,7 @@ final class WFF_API {
         return array(
             'role' => $role,
             'categories' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $c WHERE household_id=%d ORDER BY scope,kind,id", $hid), ARRAY_A),
-            'accounts' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $a WHERE household_id=%d ORDER BY type,id", $hid), ARRAY_A),
+            'accounts' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $a WHERE household_id=%d ORDER BY sort_order,id", $hid), ARRAY_A),
             'members' => $wpdb->get_results($wpdb->prepare(
                 "SELECT m.user_id,m.role,m.joined_at,u.display_name,u.user_email FROM $m m INNER JOIN $users u ON u.ID=m.user_id WHERE m.household_id=%d ORDER BY FIELD(m.role,'owner','editor','viewer'),u.display_name", $hid
             ), ARRAY_A),
@@ -177,11 +177,12 @@ final class WFF_API {
         $params[] = $limit;
         $params[] = $offset;
         $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT t.*,c.name AS category_name,a.name AS account_name,d.name AS destination_account_name,u.display_name AS creator_name
+            "SELECT t.*,c.name AS category_name,a.name AS account_name,d.name AS destination_account_name,w.name AS payment_channel_name,u.display_name AS creator_name
              FROM $t t
              LEFT JOIN $cat c ON c.id=t.category_id AND c.household_id=t.household_id
              LEFT JOIN $a a ON a.id=t.account_id AND a.household_id=t.household_id
              LEFT JOIN $a d ON d.id=t.destination_account_id AND d.household_id=t.household_id
+             LEFT JOIN $a w ON w.id=t.payment_channel_id AND w.household_id=t.household_id
              LEFT JOIN $u u ON u.ID=t.created_by
              WHERE $where ORDER BY t.occurred_on DESC,t.id DESC LIMIT %d OFFSET %d", $params
         ), ARRAY_A);
@@ -236,13 +237,50 @@ final class WFF_API {
             return self::error('轉帳請選擇不同的來源帳戶與轉入帳戶');
         }
         $pay = sanitize_key($r->get_param('payment_method') ?: 'cash');
-        if (!in_array($pay, array('cash','bank','card','other'), true)) { $pay = 'other'; }
+        if (!in_array($pay, array('cash','bank','card','mobile','other'), true)) {
+            return self::error('不支援的付款方式');
+        }
+        $channel = (int) $r->get_param('payment_channel_id') ?: null;
+        $acct_table = WFF_Storage::table('accounts');
+        if ($channel) {
+            $wallet = $wpdb->get_row($wpdb->prepare(
+                "SELECT id,type FROM $acct_table WHERE household_id=%d AND id=%d", $hid, $channel
+            ), ARRAY_A);
+            if (!$wallet || $wallet['type'] !== 'mobile' || $kind === 'transfer') {
+                return self::error('選擇的行動支付工具不正確');
+            }
+        }
+        if ($kind !== 'transfer') {
+            if ($pay === 'mobile') {
+                if (!$channel) { return self::error('請先選擇行動支付工具'); }
+                if ($account) {
+                    $funding_type = $wpdb->get_var($wpdb->prepare(
+                        "SELECT type FROM $acct_table WHERE household_id=%d AND id=%d", $hid, $account
+                    ));
+                    if (!in_array($funding_type, array('credit','cash','bank'), true)) {
+                        return self::error('行動支付扣款來源須為現金、銀行或信用卡');
+                    }
+                }
+            } else {
+                if ($channel) { return self::error('非行動支付交易不可指定支付通路'); }
+                if ($account) {
+                    $source_type = $wpdb->get_var($wpdb->prepare(
+                        "SELECT type FROM $acct_table WHERE household_id=%d AND id=%d", $hid, $account
+                    ));
+                    $expected = array('card'=>'credit','cash'=>'cash','bank'=>'bank');
+                    if (isset($expected[$pay]) && $source_type !== $expected[$pay]) {
+                        return self::error('選擇的付款工具與付款類型不符');
+                    }
+                }
+            }
+        } else { $channel = null; $pay = 'bank'; }
         $now = current_time('mysql', true);
         $data = array(
             'household_id' => $hid, 'occurred_on' => $date, 'scope' => $scope,
             'kind' => $kind, 'category_id' => $cat_id, 'amount' => $amount,
             'note' => mb_substr(sanitize_text_field($r->get_param('note')), 0, 255),
             'payment_method' => $pay, 'account_id' => $account,
+            'payment_channel_id' => $channel,
             'destination_account_id' => $kind === 'transfer' ? $dest : null,
             'updated_at' => $now,
         );
@@ -319,25 +357,77 @@ final class WFF_API {
 
     public static function save_account($r) {
         global $wpdb;
-        $hid = (int) $r['hid'];
+        $hid = (int)$r['hid'];
         $role = self::role($hid, 'editor');
         if (is_wp_error($role)) { return $role; }
+        $id = (int)$r->get_param('id');
+        $a = WFF_Storage::table('accounts');
+        $t = WFF_Storage::table('transactions');
         $name = trim(sanitize_text_field($r->get_param('name')));
         $type = sanitize_key($r->get_param('type'));
-        if (!$name || mb_strlen($name) > 80 || !in_array($type, array('cash','bank','credit'), true)) {
-            return self::error('帳戶名稱或類型不正確');
+        if ($name === '' || mb_strlen($name)>80 || !in_array($type,array('cash','bank','credit','mobile'),true)) {
+            return self::error('付款工具名稱或類型不正確');
         }
-        $a = WFF_Storage::table('accounts');
-        $id = (int) $r->get_param('id');
+        $original=null;
         if ($id) {
-            if (!$wpdb->get_var($wpdb->prepare("SELECT id FROM $a WHERE household_id=%d AND id=%d", $hid, $id))) { return self::error('找不到帳戶',404); }
-            $ok = $wpdb->update($a, array('name' => $name, 'type' => $type), array('id' => $id, 'household_id' => $hid));
-        } else {
-            $ok = $wpdb->insert($a, array('name'=>$name,'type'=>$type,'household_id'=>$hid,'created_at'=>current_time('mysql',true)));
-            $id = (int) $wpdb->insert_id;
+            $original=$wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM $a WHERE household_id=%d AND id=%d",$hid,$id
+            ),ARRAY_A);
+            if (!$original) { return self::error('找不到付款工具',404); }
+            if ($type !== $original['type']) {
+                $used=(int)$wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM $t WHERE household_id=%d
+                     AND (account_id=%d OR payment_channel_id=%d OR destination_account_id=%d)",
+                    $hid,$id,$id,$id
+                ));
+                if ($used) { return self::error('已有交易使用此付款工具，無法改變類型；可將它停用並另建新工具'); }
+            }
         }
-        if ($ok === false) { return self::error('儲存帳戶失敗',500); }
-        WFF_Storage::activity($hid, 'save_account', $id);
+        $brand=mb_substr(sanitize_text_field($r->get_param('brand')),0,100);
+        $notes=mb_substr(sanitize_text_field($r->get_param('notes')),0,255);
+        $enabled=($r->get_param('enabled') === null || filter_var($r->get_param('enabled'),FILTER_VALIDATE_BOOLEAN)) ? 1 : 0;
+        $order=max(0,min(100000,(int)$r->get_param('sort_order')));
+        $statement=null; $due=null;
+        if ($type==='credit') {
+            foreach (array('statement_day','due_day') as $col) {
+                $raw=$r->get_param($col);
+                if ($raw!==null && $raw!=='') {
+                    if (!ctype_digit((string)$raw) || (int)$raw<1 || (int)$raw>31) {
+                        return self::error('結帳日與繳款日請輸入 1–31');
+                    }
+                    if ($col==='statement_day') { $statement=(int)$raw; }
+                    else { $due=(int)$raw; }
+                }
+            }
+        }
+        $funding = null;
+        if ($type==='mobile') {
+            $funding = (int)$r->get_param('funding_account_id') ?: null;
+            if ($funding) {
+                if ($funding === $id) { return self::error('行動支付扣款來源不可指向自己'); }
+                $funding_type=$wpdb->get_var($wpdb->prepare(
+                    "SELECT type FROM $a WHERE household_id=%d AND id=%d",$hid,$funding
+                ));
+                if (!in_array($funding_type,array('cash','bank','credit'),true)) {
+                    return self::error('預設扣款來源必須是同家庭的現金、銀行或信用卡');
+                }
+            }
+        }
+        $data=array(
+            'name'=>$name,'type'=>$type,'brand'=>$brand,'notes'=>$notes,
+            'enabled'=>$enabled,'sort_order'=>$order,'statement_day'=>$statement,
+            'due_day'=>$due,'funding_account_id'=>$funding
+        );
+        if ($id) {
+            $ok=$wpdb->update($a,$data,array('id'=>$id,'household_id'=>$hid));
+        } else {
+            $data['household_id']=$hid;
+            $data['created_at']=current_time('mysql',true);
+            $ok=$wpdb->insert($a,$data);
+            $id=(int)$wpdb->insert_id;
+        }
+        if ($ok===false) { return self::error('儲存付款工具失敗',500); }
+        WFF_Storage::activity($hid,'save_payment_tool',$id);
         return array('saved'=>true,'id'=>$id);
     }
 
@@ -400,7 +490,8 @@ final class WFF_API {
         ), ARRAY_A);
         return array(
             'month'=>$month,'totals'=>$totals,'categories'=>$categories,'daily'=>$daily,
-            'recent'=>$recent['items'],'trend'=>array_values($dates),'cards'=>$cards
+            'recent'=>$recent['items'],'trend'=>array_values($dates),'cards'=>$cards,
+            'insights'=>WFF_Insights::dashboard($hid,$month,$cards)
         );
     }
 
