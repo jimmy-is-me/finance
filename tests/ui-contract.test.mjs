@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.2.2 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.2'\)/);
+test('v1.2.3 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.2.3'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -104,4 +104,45 @@ test('secure HTTPS-aware WordPress cookies with frontend error hints', () => {
   assert.match(frontend, /is_ssl\(\) \|\| wp_parse_url\(home_url\('\/'\), PHP_URL_SCHEME\) === 'https'/);
   assert.match(frontend, /wp_set_current_user\(\$user->ID\)/);
   assert.match(js, /請確認瀏覽器允許 Cookie/);
+});
+
+
+test('payment tool schema is additive and preserves existing transaction IDs',()=>{
+ const storage=readFileSync('includes/class-wff-storage.php','utf8');
+ for(const column of ['brand','notes','enabled','sort_order','statement_day','due_day','funding_account_id','payment_channel_id']){
+   assert.ok(storage.includes(column),'Missing schema column '+column);
+ }
+ assert.match(storage,/dbDelta\(/);
+ assert.doesNotMatch(storage,/DROP TABLE/i);
+});
+test('payment channels and true funding sources are validated in each household',()=>{
+ const api=readFileSync('includes/class-wff-api.php','utf8');
+ assert.match(api,/WFF_Insights::dashboard/);
+ assert.match(api,/payment_channel_id/);
+ assert.match(api,/SELECT type FROM \$acct_table WHERE household_id=%d AND id=%d/);
+ assert.match(api,/in_array\(\$funding_type, array\('credit','cash','bank'\), true\)/);
+ assert.match(api,/已有交易使用此付款工具，無法改變類型/);
+ assert.match(api,/sort_order,id/);
+});
+test('line radar donut bar analytics exclude transfers and avoid double count',()=>{
+ const insights=readFileSync('includes/class-wff-insights.php','utf8');
+ const chart=readFileSync('assets/js/charts.js','utf8');
+ assert.match(insights,/kind IN \('income','expense'\)/);
+ assert.match(insights,/kind='expense'/);
+ assert.match(insights,/payment_channel_id/);
+ assert.match(insights,/types\[\$channel\] \+= \$amount/);
+ assert.match(insights,/credit_rank/);
+ for(const type of ['lines','radar','donut','bars','methodDonut']){
+  assert.match(chart,new RegExp(type));
+ }
+ assert.match(frontend,/wff-charts/);
+ assert.match(js,/wff-chart-tooltip/);
+});
+test('mobile payment selection cascades to funding account',()=>{
+ assert.match(js,/payment_channel_id/);
+ assert.match(js,/funding_account_id/);
+ assert.match(js,/付款工具/);
+ assert.match(js,/wff-tool-tab/);
+ assert.match(js,/wff-account-form/);
+ assert.match(js,/付款通路/);
 });
