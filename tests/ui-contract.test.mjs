@@ -28,7 +28,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.2.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.0'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.2.1'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -52,4 +52,16 @@ test('guest login and optional signup do not include subscription integration', 
   assert.match(js, /登入 Finance/);
   assert.match(js, /申請免費帳號/);
   assert.doesNotMatch(php + frontend + admin, /PAYUNi|billing_endpoint|woocommerce_subscriptions/i);
+});
+
+
+test('finance modal has fixed aligned 22px label + 52px controls across columns', () => {
+  assert.match(js, /wff-field-title/);
+  assert.match(css, /wff-modal \.wff-form \.wff-field\{/);
+  assert.match(css, /grid-template-rows:22px 52px/);
+  assert.match(css, /height:52px!important/);
+  assert.match(css, /min-height:52px!important/);
+  assert.match(css, /max-height:52px!important/);
+  assert.match(css, /margin:0!important/);
+  assert.match(css, /wff-modal \.wff-form-grid > \.wff-field/);
 });
