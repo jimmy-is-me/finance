@@ -190,9 +190,11 @@ final class WFF_Loans {
             if($count && (
                 (string)$old['first_due_on']!==$first ||
                 (int)$old['installments']!==(int)$months ||
-                (float)$old['opening_principal']!==(float)$principal
+                (float)$old['opening_principal']!==(float)$principal ||
+                abs((float)$old['annual_rate']-(float)$rate)>0.00005 ||
+                abs((float)$old['monthly_payment']-(float)$monthly)>0.005
             )){
-                return self::error('已有繳款紀錄，無法更改首次繳款日、追蹤本金及總期數；可修改名稱、銀行或備註');
+                return self::error('已有繳款紀錄，無法直接更改首次繳款日、本金、期數、利率或月繳額，以免重新計算既有紀錄');
             }
         }
         $now=current_time('mysql',true);
