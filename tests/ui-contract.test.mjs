@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.2.3 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.3'\)/);
+test('v1.2.4 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.2.4'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -145,4 +145,42 @@ test('mobile payment selection cascades to funding account',()=>{
  assert.match(js,/wff-tool-tab/);
  assert.match(js,/wff-account-form/);
  assert.match(js,/付款通路/);
+});
+
+
+test('v1.2.4 keeps legacy category IDs and supports persistent sorting by group', () => {
+  const storage=readFileSync('includes/class-wff-storage.php','utf8');
+  const api=readFileSync('includes/class-wff-api.php','utf8');
+  assert.match(storage, /sort_order int\(11\) NOT NULL DEFAULT 0/);
+  assert.match(storage, /KEY category_order \(household_id,scope,kind,sort_order\)/);
+  assert.match(storage, /dbDelta\(/);
+  assert.doesNotMatch(storage, /DROP TABLE/i);
+  assert.match(api,/categories\/reorder/);
+  assert.match(api,/public static function reorder_categories/);
+  assert.match(api,/self::role\(\$hid, 'editor'\)/);
+  assert.match(api,/AND scope=%s AND kind=%s ORDER BY sort_order,id/);
+  assert.match(api,/array_unique\(\$ordered\)/);
+  assert.match(api,/if \(\$test !== \$expect\)/);
+  assert.match(api,/ROLLBACK/);
+  assert.match(api,/ORDER BY scope,kind,sort_order ASC,id ASC/);
+  assert.match(api,/MAX\(sort_order\)/);
+});
+test('category ordering works for drag and touch/keyboard arrow controls', () => {
+  for (const symbol of ['category-up','category-down','wff-category-sort-list','persistCategoryOrder','dragstart','dragover','drop','dragend']) {
+    assert.ok(js.includes(symbol), 'missing category sorting UI '+symbol);
+  }
+  assert.match(js,/categories\/reorder/);
+  assert.match(js,/const categories=S\.meta\.categories\.filter/);
+  assert.match(css,/\.wff-category-sort-actions button/);
+  assert.match(css,/max-width:520px/);
+});
+test('standalone Finance browser tab includes a cache-busted SVG favicon',()=>{
+  const html=readFileSync('templates/app.php','utf8');
+  const svg=readFileSync('assets/images/finance-favicon.svg','utf8');
+  assert.match(html,/rel="icon" type="image\/svg\+xml"/);
+  assert.match(html,/rel="shortcut icon"/);
+  assert.match(html,/finance-favicon\.svg\?v=/);
+  assert.match(svg,/<svg/);
+  assert.match(svg,/viewBox="0 0 64 64"/);
+  assert.match(svg,/>WUMETAX Finance</);
 });
