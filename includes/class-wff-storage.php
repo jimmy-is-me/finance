@@ -59,9 +59,11 @@ final class WFF_Storage {
             kind varchar(16) NOT NULL,
             name varchar(80) NOT NULL,
             color varchar(10) NOT NULL DEFAULT '#FFD93D',
+            sort_order int(11) NOT NULL DEFAULT 0,
             created_at datetime NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY category_unique (household_id,scope,kind,name),
+            KEY category_order (household_id,scope,kind,sort_order),
             KEY household_id (household_id)
         ) $c;");
         dbDelta("CREATE TABLE $a (
@@ -138,6 +140,7 @@ final class WFF_Storage {
                     $wpdb->insert(self::table('categories'), array(
                         'household_id' => $household_id, 'scope' => $scope, 'kind' => $kind,
                         'name' => $name, 'color' => $colors[$index % count($colors)],
+                        'sort_order' => ($index + 1) * 10,
                         'created_at' => current_time('mysql', true),
                     ));
                 }
