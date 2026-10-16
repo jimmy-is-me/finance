@@ -641,3 +641,52 @@ body.wff-dialog-open{overflow:hidden}
  #wff-app .wff-loan-window>span{grid-row:1;grid-column:1/-1;text-align:center}
  #wff-app .wff-loan-window .wff-button{min-width:0;padding:10px 5px}
 }
+
+
+/* v1.2.8 iPhone date controls and private receipt uploads */
+#wff-app .wff-modal input[type="date"]{
+ display:block!important;
+ box-sizing:border-box!important;
+ width:100%!important;
+ max-width:100%!important;
+ min-width:0!important;
+ height:52px!important;
+ min-height:52px!important;
+ line-height:normal!important;
+ padding:0 13px!important;
+ font-size:16px!important;
+ font-family:inherit!important;
+ appearance:auto!important;
+ -webkit-appearance:auto!important;
+ text-align:left!important;
+ color:#111!important;
+ background:#fff!important;
+}
+#wff-app .wff-modal input[type="date"]::-webkit-date-and-time-value{
+ text-align:left!important;
+ line-height:normal!important;
+ min-height:0!important;
+}
+#wff-app .wff-modal input[type="date"]::-webkit-datetime-edit{
+ display:inline-flex!important;
+ align-items:center!important;
+ padding:0!important;
+ line-height:normal!important;
+}
+#wff-app .wff-modal input[type="date"]::-webkit-calendar-picker-indicator{
+ opacity:1!important;
+ margin:0 0 0 auto!important;
+ width:22px!important;
+ height:22px!important;
+}
+#wff-app .wff-modal .wff-form-grid>*{min-width:0!important}
+#wff-app .wff-receipt-field{display:grid;gap:12px;border-top:1px solid #ccc;padding-top:20px}
+#wff-app .wff-receipt-heading{font-weight:700;font-size:14px}
+#wff-app .wff-receipt-pick{display:flex;align-items:center;justify-content:center;min-height:52px;
+ border:1px solid #111;background:#fff;position:relative;cursor:pointer;padding:12px 16px;font-weight:700}
+#wff-app .wff-receipt-pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+#wff-app .wff-receipt-preview img{display:block;max-width:100%;max-height:300px;object-fit:contain;margin:0 auto;border:1px solid #ddd}
+#wff-app .wff-receipt-field .wff-small{line-height:1.7;margin:0}
+@media(max-width:520px){
+ #wff-app .wff-modal input[type="date"]{height:50px!important;min-height:50px!important;font-size:16px!important}
+}
