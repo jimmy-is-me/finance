@@ -226,51 +226,55 @@ final class WFF_Loans {
         global $wpdb;
         $id=(int)$request->get_param('id');
         $old=$id?self::loan($hid,$id):null;
-        if($id&&!$old)return self::error('找不到貸款',404);
+        if($id && !$old)return self::error('找不到貸款',404);
         $name=trim(sanitize_text_field($request->get_param('name')));
         $lender=trim(sanitize_text_field($request->get_param('lender')));
         $scope=sanitize_key($request->get_param('scope'));
         $first=self::date($request->get_param('first_due_on'));
-        $principal=self::amount($request->get_param('opening_principal'));
-        $months=$request->get_param('installments');
-        $rate=$request->get_param('annual_rate');
-        $monthly_raw=$request->get_param('monthly_payment');
-        $monthly=($monthly_raw===null||$monthly_raw==='')?0:self::amount($monthly_raw,true);
         $status=sanitize_key($request->get_param('status')?:'active');
+        $raw_payment=$request->get_param('monthly_payment');
+        $monthly=($raw_payment===null||$raw_payment==='')?0:self::amount($raw_payment,true);
         if(!$name||mb_strlen($name)>120||mb_strlen($lender)>120
-           ||!in_array($scope,array('family','business'),true)||!$first||$principal===false
-           ||!ctype_digit((string)$months)||(int)$months<1||(int)$months>600
-           ||!is_numeric($rate)||(float)$rate<0||(float)$rate>80||$monthly===false
-           ||!in_array($status,array('active','closed'),true)){
-            return self::error('請檢查貸款名稱、金額、年利率、期數及首次繳款日期');
-        }
-        $monthly_rate=(float)$rate/1200;
-        if($monthly>0&&$monthly<=round($principal*$monthly_rate,2)){
-            return self::error('每月應繳金額需高於當期估算利息，否則本金不會下降');
+            ||!in_array($scope,array('family','business'),true)
+            ||!$first||$monthly===false
+            ||!in_array($status,array('active','closed'),true)){
+            return self::error('請確認名稱、每月預計金額與固定繳款日期');
         }
         $paytable=WFF_Storage::table('loan_payments');
-        if($old){
-            $count=(int)$wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $paytable WHERE household_id=%d AND loan_id=%d",$hid,$id
-            ));
-            // Cannot silently change schedule meaning for existing repayments.
-            if($count && (
-                (string)$old['first_due_on']!==$first ||
-                (int)$old['installments']!==(int)$months ||
-                (float)$old['opening_principal']!==(float)$principal ||
-                abs((float)$old['annual_rate']-(float)$rate)>0.00005 ||
-                abs((float)$old['monthly_payment']-(float)$monthly)>0.005
-            )){
-                return self::error('已有繳款紀錄，無法直接更改首次繳款日、本金、期數、利率或月繳額，以免重新計算既有紀錄');
+        $count=$old?(int)$wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $paytable WHERE household_id=%d AND loan_id=%d",
+            $hid,$id
+        )):0;
+        $mode=$old?($old['tracking_mode']?:'amortized'):'simple';
+        // Existing advanced loan records retain their original principal,
+        // APR and installment count. New records never require that metadata.
+        $principal=$old?(float)$old['opening_principal']:0;
+        $rate=$old?(float)$old['annual_rate']:0;
+        $months=$old?(int)$old['installments']:0;
+        if($count && $first!==$old['first_due_on']){
+            return self::error('已有繳款紀錄，不能改動最初扣款日期，避免歷史月份對應錯誤');
+        }
+        if($mode==='amortized' && $old && $count &&
+           abs((float)$old['monthly_payment']-$monthly)>0.005){
+            return self::error('舊版貸款已有繳款紀錄，不能改動月繳額以免影響原本金估算');
+        }
+        if($mode==='amortized'){
+            if($principal<=0 || $months<1) {
+                return self::error('舊版貸款資料不完整，請聯絡網站管理員');
+            }
+            $monthly_rate=$rate/1200;
+            if($monthly>0&&$monthly<=round($principal*$monthly_rate,2)){
+                return self::error('每月應繳金額須大於舊貸款的估算利息');
             }
         }
         $now=current_time('mysql',true);
         $data=array(
             'scope'=>$scope,'name'=>mb_substr($name,0,120),
             'lender'=>mb_substr($lender,0,120),
+            'tracking_mode'=>$mode,
             'opening_principal'=>$principal,
-            'annual_rate'=>round((float)$rate,4),
-            'installments'=>(int)$months,
+            'annual_rate'=>round($rate,4),
+            'installments'=>$months,
             'monthly_payment'=>$monthly,
             'first_due_on'=>$first,
             'due_day'=>(int)substr($first,8,2),
@@ -287,7 +291,7 @@ final class WFF_Loans {
             $ok=$wpdb->insert($table,$data);
             $id=(int)$wpdb->insert_id;
         }
-        if($ok===false)return self::error('儲存貸款失敗',500);
+        if($ok===false)return self::error('儲存每月繳款追蹤失敗',500);
         WFF_Storage::activity($hid,$old?'update_loan':'create_loan',$id);
         return array('saved'=>true,'id'=>$id);
     }
@@ -300,13 +304,17 @@ final class WFF_Loans {
         $loan=self::loan($hid,$id);
         if(!$loan)return self::error('找不到貸款紀錄',404);
         $num=$request->get_param('installment_no');
-        if(!ctype_digit((string)$num)||(int)$num<1||(int)$num>(int)$loan['installments']){
-            return self::error('還款期數不正確');
+        $simple=($loan['tracking_mode']??'amortized')==='simple';
+        $max_no=$simple?2400:(int)$loan['installments'];
+        if(!ctype_digit((string)$num)||(int)$num<1||(int)$num>$max_no){
+            return self::error('繳款月份不正確');
         }
         $paid_on=self::date($request->get_param('paid_on'));
-        $amount=self::amount($request->get_param('paid_amount'));
+        $raw_amount=$request->get_param('paid_amount');
+        $amount=$simple && ($raw_amount===null||$raw_amount==='') ? 0
+            : self::amount($raw_amount, $simple);
         $extra_raw=$request->get_param('extra_principal');
-        $extra=$extra_raw===null||$extra_raw===''?0:self::amount($extra_raw,true);
+        $extra=$simple?0:($extra_raw===null||$extra_raw===''?0:self::amount($extra_raw,true));
         if(!$paid_on||$amount===false||$extra===false)return self::error('請輸入正確的繳款日期與金額');
         $note=mb_substr(sanitize_text_field($request->get_param('note')),0,255);
         $table=WFF_Storage::table('loan_payments');
