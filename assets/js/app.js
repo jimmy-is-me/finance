@@ -448,6 +448,7 @@
           '<td>'+e(x.creator_name||'—')+'</td>'+
           '<td><strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></td>'+
           (canEdit()?'<td><button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
+            (Number(x.has_receipt)?'<button class="wff-iconbutton" type="button" aria-label="查看收據" data-action="view-receipt" data-id="'+e(x.id)+'">📷</button>':'')+
             '<button class="wff-iconbutton" aria-label="複製此記帳，建立新的一筆" title="複製記帳" data-action="duplicate-transaction" data-id="'+e(x.id)+'">⧉</button>'+ 
              '<button class="wff-iconbutton" aria-label="刪除" data-action="delete-transaction" data-id="'+e(x.id)+'">×</button></td>':'')+'</tr>').join('')+
         '</tbody></table></div>':empty('找不到符合條件的交易'))+
@@ -637,6 +638,12 @@
           ['cash','現金'],['card','信用卡'],['mobile','行動支付'],['bank','銀行帳戶'],['other','其他']],d.payment_method||'cash')+'</select>')+
         '</div>'+
         '<div id="wff-transaction-dynamic">'+transactionFields(d)+'</div>'+
+        '<div class="wff-receipt-field"><span class="wff-receipt-heading">收據照片（選填）</span>'+
+        '<label class="wff-receipt-pick">📷 拍照或選取圖片<input type="file" name="receipt" accept="image/jpeg,image/png,image/webp" class="wff-receipt-input"></label>'+
+        '<div class="wff-receipt-preview" aria-live="polite"></div>'+
+        (d.id&&Number(d.has_receipt)?'<button type="button" class="wff-textbtn" data-action="view-receipt" data-id="'+e(d.id)+'">查看已存收據</button>'+
+        '<button type="button" class="wff-textbtn" data-action="remove-receipt" data-id="'+e(d.id)+'">刪除已存收據</button>':'')+
+        '<p class="wff-small">JPG、PNG、WebP，最多 3 MB。圖片儲存在資料庫，限家庭成員查看。</p></div>'+
         '<button class="wff-button wff-primary" type="submit">儲存記帳 ✓</button></form>';
     } else if(type==='loan'){
       title=d.id?'編輯每月繳款':'新增每月繳款';
@@ -734,9 +741,23 @@
   function openModal(type,item) { S.modal=type;S.draft={...(item||{})};render(); }
   function resetModal() { S.modal=null;S.draft={};render(); }
   function getFormData(form) { return Object.fromEntries(new FormData(form).entries()); }
-  async function submitTransaction(data) {
+  async function submitTransaction(data,form) {
     const id=S.draft.id;
-    await request(path('transactions'+(id?'/'+id:'')),id?'PUT':'POST',data);
+    const photo=form?.querySelector('[name="receipt"]')?.files?.[0];
+    if(photo && (photo.size>3*1024*1024 || !['image/jpeg','image/png','image/webp'].includes(photo.type))){
+      throw new Error('收據僅支援 3 MB 以下 JPG、PNG、WebP 圖片');
+    }
+    const saved=await request(path('transactions'+(id?'/'+id:'')),id?'PUT':'POST',data);
+    const savedId=Number(saved?.id||id);
+    if(photo){
+      if(!savedId)throw new Error('記帳已保存，但尚未取得記帳編號，請重新編輯上傳收據');
+      const multi=new FormData();multi.append('receipt',photo,photo.name);
+      const res=await fetch(config.rest+path('transactions/'+savedId+'/receipt'),{
+        method:'POST',credentials:'same-origin',headers:{'X-WP-Nonce':config.nonce},body:multi
+      });
+      const body=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error('記帳已儲存，但收據上傳失敗：'+(body.message||'請重試'));
+    }
     resetModal();await reload();show(id?'已更新記帳':'已新增記帳');
   }
   function encodeCSVCell(value) {
@@ -832,6 +853,28 @@
     }
     if(act==='close-modal'){ resetModal(); }
     if(act==='new-transaction'){openModal('transaction',{scope:'family',kind:'expense'});}
+    if(act==='view-receipt'){
+      attempt(async()=>{
+        // Open synchronously to avoid popup blockers.
+        const area=root.querySelector('.wff-receipt-preview');
+        const imageData=await request(path('transactions/'+id+'/receipt'));
+        if(area){area.innerHTML='<img alt="已存收據" src="'+e(imageData.data_url)+'">';area.scrollIntoView({block:'nearest'});}
+        else {
+          const w=window.open('','_blank');
+          if(w){
+            w.document.title='Finance 收據';
+            w.document.body.style='margin:0;background:#111;display:grid;place-items:center;min-height:100vh';
+            const img=w.document.createElement('img');
+            img.src=imageData.data_url;img.alt='收據';img.style='max-width:100%;max-height:100vh;object-fit:contain';
+            w.document.body.appendChild(img);
+          }
+        }
+      });
+    }
+    if(act==='remove-receipt' && confirm('確定移除已存收據照片？')){
+      attempt(async()=>{await request(path('transactions/'+id+'/receipt'),'DELETE');
+        S.draft.has_receipt=0;render();show('已移除收據');});
+    }
     if(act==='edit-transaction'&&item){openModal('transaction',item);}
     if(act==='duplicate-transaction'&&item){
       const copy={...item};
@@ -912,6 +955,15 @@
     if(act==='accept-invite'){attempt(async()=>{await request('invite/accept','POST',{token:inviteToken});S.invitation=null;history.replaceState(null,'',config.home);await getHouseholds();show('已成功加入家庭');});}
   });
   root.addEventListener('change',ev=>{
+    if(ev.target.matches('.wff-receipt-input')){
+      const file=ev.target.files?.[0], preview=ev.target.closest('.wff-receipt-field')?.querySelector('.wff-receipt-preview');
+      if(file&&preview){
+        if(file.size>3*1024*1024){show('圖片須小於 3 MB');ev.target.value='';return;}
+        const reader=new FileReader();
+        reader.onload=()=>{preview.innerHTML='<img alt="收據預覽" src="'+e(reader.result)+'">';};
+        reader.readAsDataURL(file);
+      }
+    }
     const t=ev.target;
     if(t.id==='wff-household') { S.hid=Number(t.value);S.page=1;sessionStorage.setItem('wff_household',S.hid);attempt(reload); }
     if(t.id==='wff-month') { S.month=t.value;S.page=1;attempt(reload); }
@@ -977,7 +1029,7 @@
         } catch(err) { S.authError=err.message;render(); }
       });
     }
-    if(form.id==='wff-transaction-form'){attempt(()=>submitTransaction(getFormData(form)));}
+    if(form.id==='wff-transaction-form'){attempt(()=>submitTransaction(getFormData(form),form));}
     if(form.id==='wff-loan-form'){
       attempt(async()=>{
         const id=S.draft.id;
