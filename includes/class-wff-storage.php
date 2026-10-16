@@ -125,6 +125,7 @@ final class WFF_Storage {
             scope varchar(16) NOT NULL DEFAULT 'family',
             name varchar(120) NOT NULL,
             lender varchar(120) NOT NULL DEFAULT '',
+            tracking_mode varchar(16) NOT NULL DEFAULT 'amortized',
             opening_principal decimal(15,2) NOT NULL,
             annual_rate decimal(8,4) NOT NULL DEFAULT 0,
             installments int(11) unsigned NOT NULL,
