@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.2.6 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.6'\)/);
+test('v1.2.7 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.2.7'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -262,7 +262,7 @@ test('projected loan payments are not automatically double-booked into expenses'
   const loans=readFileSync('includes/class-wff-loans.php','utf8');
   assert.doesNotMatch(loans, /WFF_Storage::table\('transactions'\)/);
   assert.match(loans, /loan_payments/);
-  assert.match(js, /不會自動加進收支/);
+  assert.match(js, /不會自動新增收支交易/);
 });
 test('clicking the modal backdrop or pressing Escape does not discard unsaved edits',()=>{
   assert.match(js, /<div class="wff-overlay" role="presentation">/);
@@ -271,4 +271,32 @@ test('clicking the modal backdrop or pressing Escape does not discard unsaved ed
   assert.match(js, /if\(ev\.key==='Escape'\)\{closeTip\(\);\}/);
   assert.match(js, /wff-modal-close" data-action="close-modal"/);
   assert.match(js, /resetModal\(\);await reload\(\)/);
+});
+
+test('v1.2.7 new loan requires no APR/principal/remaining installments',()=>{
+ const loan=readFileSync('includes/class-wff-loans.php','utf8');
+ const schema=readFileSync('includes/class-wff-storage.php','utf8');
+ assert.match(schema,/tracking_mode varchar\(16\) NOT NULL DEFAULT 'amortized'/);
+ assert.match(loan,/\$mode=\$old\?\(\$old\['tracking_mode'\]/);
+ assert.match(loan,/:\\s*'simple'/);
+ assert.match(loan,/simple_projection/);
+ assert.match(loan,/max_scan/);
+ assert.match(loan,/max\\(-120,min\\(120/);
+ assert.match(loan,/self::amount\\(\$raw_amount, \$simple\\)/);
+ const start=js.indexOf("} else if(type==='loan'){");
+ const end=js.indexOf("} else if(type==='loan-payment'){",start);
+ const form=js.slice(start,end);
+ assert.ok(start>0 && end>start);
+ assert.doesNotMatch(form,/name="opening_principal"|name="annual_rate"|name="installments"/);
+ assert.match(form,/每月預計金額（選填）/);
+ assert.match(form,/每月固定繳款日/);
+ assert.match(form,/銀行／貸款機構（選填）/);
+});
+test('monthly payment note can be marked paid in one step and paged',()=>{
+ assert.match(js,/quick-pay-loan/);
+ assert.match(js,/loan-window-prev/);
+ assert.match(js,/loan-window-next/);
+ assert.match(js,/loan-window-today/);
+ assert.match(js,/paid_amount:loan\.regular_payment\\|\\|0/);
+ assert.match(js,/付.*不會自動新增收支交易/);
 });
