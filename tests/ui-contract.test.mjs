@@ -28,7 +28,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.2.7 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.7'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.2.8'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -298,4 +298,28 @@ test('monthly repayment is a manual one-step journal with bounded navigation',()
    'loan-window-today','paid_amount:loan.regular_payment||0','不會自動新增收支交易']){
    assert.ok(js.includes(token),'missing '+token);
  }
+});
+
+test('v1.2.8 private receipts are household-scoped and require editor upload',()=>{
+ const api=readFileSync('includes/class-wff-api.php','utf8');
+ const db=readFileSync('includes/class-wff-storage.php','utf8');
+ assert.match(db,/image_base64 longtext NOT NULL/);
+ assert.match(db,/UNIQUE KEY transaction_id \(transaction_id\)/);
+ assert.match(api,/public static function save_receipt/);
+ assert.match(api,/public static function get_receipt/);
+ assert.match(api,/public static function delete_receipt/);
+ assert.match(api,/self::role\(\$hid,'editor'\)/);
+ assert.match(api,/getimagesize/);
+ assert.match(api,/3\*1024\*1024/);
+ assert.match(api,/base64_encode/);
+ assert.match(api,/SELECT id FROM \$t WHERE household_id=%d AND id=%d/);
+ assert.match(api,/AS has_receipt/);
+});
+test('v1.2.8 photos are attached after saving the transaction',()=>{
+ assert.match(js,/name="receipt" accept="image\/jpeg,image\/png,image\/webp"/);
+ assert.match(js,/async function submitTransaction\(data,form\)/);
+ assert.match(js,/multi.append\('receipt',photo,photo.name\)/);
+ assert.match(js,/data-action="view-receipt"/);
+ assert.match(css,/::-webkit-date-and-time-value/);
+ assert.match(css,/::-webkit-datetime-edit/);
 });
