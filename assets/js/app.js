@@ -749,6 +749,8 @@
     }
     const saved=await request(path('transactions'+(id?'/'+id:'')),id?'PUT':'POST',data);
     const savedId=Number(saved?.id||id);
+    // Preserve the saved record ID if its photo upload fails; retry must not duplicate the expense.
+    if(savedId)S.draft.id=savedId;
     if(photo){
       if(!savedId)throw new Error('記帳已保存，但尚未取得記帳編號，請重新編輯上傳收據');
       const multi=new FormData();multi.append('receipt',photo,photo.name);
