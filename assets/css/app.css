@@ -624,3 +624,20 @@ body.wff-dialog-open{overflow:hidden}
  #wff-app .wff-loan-stats>div{padding:13px 10px}
  #wff-app .wff-loan-stats strong{font-size:15px}
 }
+
+/* v1.2.7 — simple monthly payment journal (no interest or principal inputs). */
+#wff-app .wff-loan-window{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+#wff-app .wff-loan-window .wff-button{min-height:42px;padding:8px 12px;font-size:12px}
+#wff-app .wff-loan-window>span{font-size:12px;color:#555;white-space:nowrap;padding:0 5px}
+#wff-app .wff-loan-simple-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+#wff-app .wff-loan-pay-btn{min-height:38px}
+#wff-app .wff-loan-table td:nth-last-child(1){min-width:210px}
+#wff-app .wff-loan-table .wff-textbtn{margin:4px 8px 4px 0;white-space:nowrap}
+@media(max-width:960px){
+ #wff-app .wff-loan-simple-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:520px){
+ #wff-app .wff-loan-window{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ #wff-app .wff-loan-window>span{grid-row:1;grid-column:1/-1;text-align:center}
+ #wff-app .wff-loan-window .wff-button{min-width:0;padding:10px 5px}
+}
