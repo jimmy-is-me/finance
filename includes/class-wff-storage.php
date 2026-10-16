@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 final class WFF_Storage {
     public static function table($name) {
         global $wpdb;
-        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments');
+        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','receipts');
         if (!in_array($name, $allowed, true)) { return ''; }
         return $wpdb->prefix . 'wff_' . $name;
     }
@@ -22,6 +22,7 @@ final class WFF_Storage {
         $log = self::table('activity');
         $loans = self::table('loans');
         $loan_payments = self::table('loan_payments');
+        $receipts = self::table('receipts');
 
         dbDelta("CREATE TABLE $h (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -156,6 +157,21 @@ final class WFF_Storage {
             UNIQUE KEY loan_installment (loan_id,installment_no),
             KEY household_loan (household_id,loan_id),
             KEY paid_on (paid_on)
+        ) $c;");
+        // Store receipts inside the WordPress database instead of the publicly
+        // reachable Media Library; reading still requires household membership.
+        dbDelta("CREATE TABLE $receipts (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            household_id bigint(20) unsigned NOT NULL,
+            transaction_id bigint(20) unsigned NOT NULL,
+            mime varchar(32) NOT NULL,
+            image_base64 longtext NOT NULL,
+            filename varchar(190) NOT NULL DEFAULT '',
+            uploaded_by bigint(20) unsigned NOT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY transaction_id (transaction_id),
+            KEY household_transaction (household_id,transaction_id)
         ) $c;");
         // dbDelta adds missing columns/indexes without dropping historical data.
         // Legacy account IDs, transaction funding links and categories remain unchanged.
