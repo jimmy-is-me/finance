@@ -55,4 +55,32 @@ if($amount<=1000 || $amount>=1050) {
     fwrite(STDERR,'Interest amortization amount outside expected range'.PHP_EOL);
     exit(1);
 }
-echo "Loan recurring due dates / month-end / leap years / unpaid / principal / interest: OK\n";
+
+// Simple recurring tracker does NOT require an outstanding principal or APR.
+$tracker=array(
+    'tracking_mode'=>'simple','first_due_on'=>'2026-10-05','due_day'=>5,
+    'monthly_payment'=>0,'opening_principal'=>0,'annual_rate'=>0,
+    'installments'=>0,'status'=>'active'
+);
+$seen=invoke_private('projection',$tracker,array(),0);
+expect($seen['simple'],true,'Simple tracker selected');
+expect($seen['regular_payment'],0.0,'Optional monthly amount may be empty');
+if(count($seen['schedule'])>18) {
+    fwrite(STDERR,"Simple tracker must use a bounded viewing window\n");exit(1);
+}
+$logged=invoke_private('projection',$tracker,array(
+    array('installment_no'=>1,'paid_amount'=>0,'extra_principal'=>0,
+          'paid_on'=>'2026-10-05','note'=>'本期已繳')
+),0);
+expect($logged['paid_count'],1,'Zero amount still counts as explicitly paid');
+expect($logged['recorded_total'],0.0,'Unknown amount does not create spending');
+$scrolled=invoke_private('projection',$tracker,array(),12);
+expect($scrolled['simple'],true,'Can page monthly schedule forward');
+if(count($scrolled['schedule'])>18) {
+    fwrite(STDERR,"Paged tracker unexpectedly generated too many entries\n");exit(1);
+}
+$manual=$tracker;$manual['first_due_on']='2027-01-31';$manual['due_day']=31;
+expect(invoke_private('due',$manual,1),'2027-02-28','Tracker clamps month end');
+expect(invoke_private('due',$manual,2),'2027-03-31','Tracker restores 31st');
+
+echo "Loan recurring due dates / month-end / leap years / unpaid / principal / interest / simple tracking: OK\n";
