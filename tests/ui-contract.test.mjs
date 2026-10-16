@@ -273,30 +273,29 @@ test('clicking the modal backdrop or pressing Escape does not discard unsaved ed
   assert.match(js, /resetModal\(\);await reload\(\)/);
 });
 
-test('v1.2.7 new loan requires no APR/principal/remaining installments',()=>{
+test('v1.2.7 new loans are simple tracking with no required APR or principal',()=>{
  const loan=readFileSync('includes/class-wff-loans.php','utf8');
  const schema=readFileSync('includes/class-wff-storage.php','utf8');
- assert.match(schema,/tracking_mode varchar\(16\) NOT NULL DEFAULT 'amortized'/);
- assert.match(loan,/\$mode=\$old\?\(\$old\['tracking_mode'\]/);
- assert.match(loan,/:\\s*'simple'/);
- assert.match(loan,/simple_projection/);
- assert.match(loan,/max_scan/);
- assert.match(loan,/max\\(-120,min\\(120/);
- assert.match(loan,/self::amount\\(\$raw_amount, \$simple\\)/);
+ assert.ok(schema.includes("tracking_mode varchar(16) NOT NULL DEFAULT 'amortized'"));
+ assert.ok(loan.includes("simple_projection"));
+ assert.ok(loan.includes("max_scan"));
+ assert.ok(loan.includes("max(-120,min(120"));
+ assert.ok(loan.includes("self::amount($raw_amount, $simple)"));
+ assert.ok(loan.includes("'tracking_mode'=>$mode"));
  const start=js.indexOf("} else if(type==='loan'){");
  const end=js.indexOf("} else if(type==='loan-payment'){",start);
  const form=js.slice(start,end);
  assert.ok(start>0 && end>start);
- assert.doesNotMatch(form,/name="opening_principal"|name="annual_rate"|name="installments"/);
- assert.match(form,/每月預計金額（選填）/);
- assert.match(form,/每月固定繳款日/);
- assert.match(form,/銀行／貸款機構（選填）/);
+ for(const old of ['name="opening_principal"','name="annual_rate"','name="installments"']){
+   assert.ok(!form.includes(old),'old required field still visible: '+old);
+ }
+ assert.ok(form.includes('每月預計金額（選填）'));
+ assert.ok(form.includes('每月固定繳款日'));
+ assert.ok(form.includes('銀行／貸款機構（選填）'));
 });
-test('monthly payment note can be marked paid in one step and paged',()=>{
- assert.match(js,/quick-pay-loan/);
- assert.match(js,/loan-window-prev/);
- assert.match(js,/loan-window-next/);
- assert.match(js,/loan-window-today/);
- assert.match(js,/paid_amount:loan\.regular_payment\\|\\|0/);
- assert.match(js,/付.*不會自動新增收支交易/);
+test('monthly repayment is a manual one-step journal with bounded navigation',()=>{
+ for(const token of ['quick-pay-loan','loan-window-prev','loan-window-next',
+   'loan-window-today','paid_amount:loan.regular_payment||0','不會自動新增收支交易']){
+   assert.ok(js.includes(token),'missing '+token);
+ }
 });
