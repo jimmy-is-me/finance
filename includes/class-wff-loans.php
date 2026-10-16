@@ -73,6 +73,69 @@ final class WFF_Loans {
         $day=min((int)$loan['due_day'],(int)$period->format('t'));
         return $period->format('Y-m-').sprintf('%02d',$day);
     }
+    private static function month_delta($from, $to) {
+        $a=substr((string)$from,0,7);
+        $b=substr((string)$to,0,7);
+        return ((int)substr($b,0,4)-(int)substr($a,0,4))*12
+            + ((int)substr($b,5,2)-(int)substr($a,5,2));
+    }
+    // An unbounded monthly reminder uses a bounded 18-month viewing window.
+    // Its installment number stays stable when browsing other months.
+    private static function simple_projection($loan, $payments, $window_offset = 0) {
+        $paid_by_number=array();
+        foreach ($payments as $p) { $paid_by_number[(int)$p['installment_no']]=$p; }
+        $today=wp_date('Y-m-d');
+        $first=$loan['first_due_on'];
+        $selected=(new DateTimeImmutable('first day of this month',wp_timezone()))
+            ->modify(($window_offset>=0?'+':'').(int)$window_offset.' months')->format('Y-m-d');
+        $window_index=self::month_delta($first,$selected);
+        $start=max(0,$window_index-5);
+        $end=max(0,$window_index+12);
+        // No more than 18 entries per loan regardless of years elapsed.
+        $schedule=array();
+        $monthly=(float)$loan['monthly_payment'];
+        for($index=$start;$index<=$end;$index++) {
+            $no=$index+1;
+            $due=self::due($loan,$index);
+            $p=$paid_by_number[$no]??null;
+            $paid=$p && !empty($p['paid_on']);
+            $schedule[]=array(
+                'number'=>$no,'due_on'=>$due,'scheduled_amount'=>$monthly,
+                'interest_estimate'=>0,'principal_estimate'=>0,
+                'status'=>$paid?'paid':($due<$today?'overdue':'upcoming'),
+                'paid_amount'=>$p?(float)$p['paid_amount']:0,
+                'extra_principal'=>0,
+                'paid_on'=>$p['paid_on']??null,'note'=>$p['note']??'',
+                'remaining_after_estimate'=>0
+            );
+        }
+        // Find oldest unchecked due, including prior months outside the window.
+        // Do not create any stored rows when showing a reminder.
+        $max_scan=max(1,min(2400,self::month_delta($first,$today)+14));
+        $next=null;$overdue=0;
+        for($index=0;$index<$max_scan;$index++) {
+            $due=self::due($loan,$index);
+            $p=$paid_by_number[$index+1]??null;
+            if($p && !empty($p['paid_on']))continue;
+            if($next===null)$next=array(
+                'number'=>$index+1,'due_on'=>$due,'scheduled_amount'=>$monthly,
+                'status'=>$due<$today?'overdue':'upcoming'
+            );
+            if($due<$today)$overdue++;
+        }
+        $total=0.0;$count=0;
+        foreach($payments as $p) {
+            if(!empty($p['paid_on'])) { $count++;$total+=(float)$p['paid_amount']; }
+        }
+        return array(
+            'schedule'=>$schedule,'next_due'=>$loan['status']==='active'?$next:null,
+            'overdue_count'=>$overdue,'paid_count'=>$count,'partial_count'=>0,
+            'recorded_total'=>round($total,2),
+            'remaining_principal_estimate'=>0,'regular_payment'=>$monthly,
+            'simple'=>true,
+            'window_offset'=>$window_offset
+        );
+    }
     private static function regular_amount($loan) {
         $configured=(float)$loan['monthly_payment'];
         if($configured>0) { return round($configured,2); }
@@ -84,7 +147,10 @@ final class WFF_Loans {
         $factor=pow(1+$r,$months);
         return round($p*$r*$factor/($factor-1),2);
     }
-    private static function projection($loan,$payments) {
+    private static function projection($loan,$payments,$offset=0) {
+        if (($loan['tracking_mode']??'amortized')==='simple') {
+            return self::simple_projection($loan,$payments,$offset);
+        }
         $by_number=array();
         foreach($payments as $payment){$by_number[(int)$payment['installment_no']]=$payment;}
         $balance=(float)$loan['opening_principal'];
@@ -140,6 +206,7 @@ final class WFF_Loans {
             "SELECT * FROM $table WHERE household_id=%d ORDER BY
              CASE WHEN status='active' THEN 0 ELSE 1 END,id DESC LIMIT 100",$hid
         ),ARRAY_A);
+        $offset=max(-120,min(120,(int)$request->get_param('offset')));
         $all=array();
         foreach($rows as $loan){
             $pay=$wpdb->get_results($wpdb->prepare(
@@ -147,10 +214,10 @@ final class WFF_Loans {
                  FROM $payments WHERE household_id=%d AND loan_id=%d ORDER BY installment_no",
                 $hid,$loan['id']
             ),ARRAY_A);
-            $state=self::projection($loan,$pay);
+            $state=self::projection($loan,$pay,$offset);
             $all[]=array_merge($loan,$state);
         }
-        return array('items'=>$all,'today'=>wp_date('Y-m-d'));
+        return array('items'=>$all,'today'=>wp_date('Y-m-d'),'window_offset'=>$offset);
     }
     public static function save_loan($request) {
         $hid=(int)$request['hid'];
