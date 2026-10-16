@@ -167,6 +167,7 @@ final class WFF_API {
         $cat = WFF_Storage::table('categories');
         $a = WFF_Storage::table('accounts');
         $u = $wpdb->users;
+        $receipt_table = WFF_Storage::table('receipts');
         $where = "t.household_id=%d";
         $params = array($hid);
         if (!empty($filters['month'])) {
@@ -185,7 +186,7 @@ final class WFF_API {
         $params[] = $limit;
         $params[] = $offset;
         $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT t.*,c.name AS category_name,c.color AS category_color,a.name AS account_name,d.name AS destination_account_name,w.name AS payment_channel_name,u.display_name AS creator_name
+            "SELECT t.*,(SELECT COUNT(*) FROM $receipt_table rr WHERE rr.household_id=t.household_id AND rr.transaction_id=t.id) AS has_receipt,c.name AS category_name,c.color AS category_color,a.name AS account_name,d.name AS destination_account_name,w.name AS payment_channel_name,u.display_name AS creator_name
              FROM $t t
              LEFT JOIN $cat c ON c.id=t.category_id AND c.household_id=t.household_id
              LEFT JOIN $a a ON a.id=t.account_id AND a.household_id=t.household_id
