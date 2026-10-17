@@ -139,15 +139,19 @@ final class WFF_Admin {
             . '<p>在 Cloudflare、LiteSpeed Cache、WP Rocket 等快取工具中，請排除首頁（首頁模式開啟時）、指定 Finance 頁面與 Finance REST API，並避免快取登入後的私人資料。</p>'
             . '<p>停用或更新外掛不會清除任何家庭、成員或收支紀錄。如要移轉主機，請備份 WordPress 資料庫。</p></div>';
         $receipt_state = WFF_Private_Receipts::status();
-        echo '<div class="wff-admin-panel"><h2>收據圖片私人儲存</h2>'
+        echo '<div class="wff-admin-panel"><h2>收據媒體庫（私人圖片）</h2>'
+            . '<p>透過 WordPress 媒體庫整理收據附件，但實際圖片仍在網站公開根目錄外；不會提供公開原圖或縮圖網址。</p>'
+            . '<p><a class="button button-secondary" href="' . esc_url(admin_url('upload.php')) . '">開啟 WordPress 媒體庫</a></p>'
+            . '<p>已建立媒體庫索引：<strong>' . (int)$receipt_state['linked'] . '</strong> 張；私人檔案待建立索引：'
+            . (int)$receipt_state['unlinked'] . ' 張</p>'
             . '<p><strong>' . ($receipt_state['available'] ? '私人目錄正常' : '收據上傳已安全停用') . '</strong>：'
             . esc_html($receipt_state['message']) . '</p>'
             . ($receipt_state['available'] ? '<p>伺服器私人路徑：<code>'
                 . esc_html($receipt_state['directory']) . '</code></p>' : '')
             . '<p>等待搬移的舊版資料庫收據：<strong>' . (int)$receipt_state['pending'] . '</strong> 張</p>'
             . ($receipt_state['last_error'] ? '<p>上次搬移提示：' . esc_html($receipt_state['last_error']) . '</p>' : '')
-            . '<p>自動背景程序每批最多處理 3 張，只有在檔案寫入及驗證成功後才清空資料庫的舊圖片內容。</p>'
-            . '<p>若主機目錄結構特殊，請在 <code>wp-config.php</code> 中設定：'
+            . '<p>背景排程每批最多處理 3 張舊照片，並為安全儲存的舊圖片建立 WordPress 媒體庫索引；完成驗證後才清空資料庫 Base64。</p>'
+            . '<p>一般 xCloud／Nginx 主機會自動尋找安全的私有路徑；只有非標準目錄結構才須在 <code>wp-config.php</code> 中設定：'
             . '<code>define(&#39;WFF_PRIVATE_RECEIPTS_DIR&#39;, &#39;/home/account/private/finance-receipts&#39;);</code>'
             . '請務必確保此路徑不在任何 Nginx／Apache 虛擬主機的公開根目錄下。</p>'
             . '<p>備份請同時包含 WordPress 資料庫及此私人圖片目錄；只有備份資料庫將無法還原新收據。</p>';
