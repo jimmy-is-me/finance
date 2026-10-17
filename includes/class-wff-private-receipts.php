@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) { exit; }
  * verified, and its location committed to the database.
  */
 final class WFF_Private_Receipts {
-    const MAX_BYTES = 3145728;
+    const MAX_BYTES = 5242880;
     const BATCH_SIZE = 3;
 
     public static function init() {
@@ -169,7 +169,7 @@ final class WFF_Private_Receipts {
 
     private static function validate_bytes($bytes, $expected_mime = null) {
         if (!is_string($bytes) || strlen($bytes) < 1 || strlen($bytes) > self::MAX_BYTES) {
-            return self::issue('收據圖片必須小於 3 MB');
+            return self::issue('收據圖片必須小於 5 MB');
         }
         $image = @getimagesizefromstring($bytes);
         $allow = array('image/jpeg'=>'jpg', 'image/png'=>'png', 'image/webp'=>'webp');
@@ -250,7 +250,7 @@ final class WFF_Private_Receipts {
         if (!$uploaded || !isset($uploaded['tmp_name'], $uploaded['size']) ||
             (int)$uploaded['size'] < 1 || (int)$uploaded['size'] > self::MAX_BYTES ||
             !empty($uploaded['error']) || !is_uploaded_file($uploaded['tmp_name'])) {
-            return self::issue('請上傳 3 MB 以內的有效收據圖片');
+            return self::issue('請上傳 5 MB 以內的有效收據圖片');
         }
         $dir = self::directory();
         if (is_wp_error($dir)) { return $dir; } // fail closed
