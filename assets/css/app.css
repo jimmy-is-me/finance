@@ -690,3 +690,101 @@ body.wff-dialog-open{overflow:hidden}
 @media(max-width:520px){
  #wff-app .wff-modal input[type="date"]{height:50px!important;min-height:50px!important;font-size:16px!important}
 }
+
+
+/* v1.3.1 — iOS Safari date field, no forced zoom, usable edit modal */
+body.wff-dialog-open{overflow:hidden!important;overscroll-behavior:none}
+#wff-app .wff-overlay{overscroll-behavior:contain;overflow:hidden}
+#wff-app .wff-modal{
+  scrollbar-gutter:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+}
+#wff-app .wff-modal-head{
+  position:sticky;
+  top:-18px;
+  z-index:10;
+  background:#fff;
+  padding-top:6px;
+  min-height:60px;
+}
+#wff-app .wff-modal-close{
+  width:44px;height:44px;min-width:44px;min-height:44px;
+  touch-action:manipulation;
+}
+#wff-app :is(input,select,textarea){
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+@media (hover:none) and (pointer:coarse){
+  /* 16px is essential: iOS Safari zooms input fields smaller than 16px. */
+  #wff-app :is(input,select,textarea),
+  #wff-app .wff-modal .wff-form .wff-field :is(input,select,textarea){
+    font-size:16px!important;
+  }
+}
+#wff-app .wff-date-control{
+  position:relative;box-sizing:border-box;
+  display:flex;align-items:center;justify-content:space-between;
+  width:100%;min-width:0;
+  height:var(--wff-control-height,52px);
+  border:1px solid #111;background:#fff;
+  padding:0 16px;
+  overflow:hidden;
+}
+#wff-app .wff-date-label{
+  display:block;min-width:0;
+  color:#111;font-size:16px;font-weight:600;
+  line-height:1.35;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+  pointer-events:none;
+}
+#wff-app .wff-date-symbol{font-size:20px;line-height:1;pointer-events:none;color:#444}
+#wff-app .wff-modal .wff-date-control input[type="date"]{
+  position:absolute!important;inset:0!important;
+  z-index:1;display:block!important;
+  width:100%!important;height:100%!important;
+  min-height:0!important;max-height:none!important;
+  margin:0!important;padding:0!important;
+  opacity:0!important;
+  border:0!important;
+  cursor:pointer;
+  -webkit-appearance:none!important;
+  appearance:none!important;
+}
+#wff-app .wff-date-control:focus-within{outline:2px solid #111;outline-offset:2px}
+#wff-app .wff-form-grid>.wff-field{min-width:0;overflow:visible}
+#wff-app .wff-today-panel{margin:0 0 26px}
+#wff-app .wff-today-stats{
+  display:flex;flex-wrap:wrap;gap:13px 25px;
+  margin-bottom:16px;font-size:13px;line-height:1.6;
+}
+#wff-app .wff-today-stats span{display:inline-flex;align-items:center;gap:7px}
+#wff-app .wff-today-list{display:grid;max-height:450px;overflow-y:auto}
+#wff-app .wff-today-item{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;padding:12px 0;border-bottom:1px solid #e4e4e4;font-size:13px
+}
+#wff-app .wff-today-item>div{flex:1;min-width:0}
+#wff-app .wff-today-item small{display:block;color:#666;font-size:11px;margin-top:4px;overflow-wrap:anywhere}
+#wff-app .wff-today-item strong{white-space:nowrap;font-size:13px}
+#wff-app .wff-receipt-progress{font-size:12px;line-height:1.65;color:#444;overflow-wrap:anywhere}
+@media(max-width:520px){
+  #wff-app .wff-overlay{
+    position:fixed;inset:0;
+    padding:8px 8px max(8px,env(safe-area-inset-bottom));
+    align-items:center;
+    overflow:hidden;
+  }
+  #wff-app .wff-modal{
+    width:100%;max-width:100%;
+    min-width:0;
+    max-height:calc(100dvh - 16px - env(safe-area-inset-bottom));
+    padding:18px;
+  }
+  #wff-app .wff-modal-head{top:-18px}
+  #wff-app .wff-date-control{height:50px}
+  #wff-app .wff-today-stats{gap:8px 16px}
+  #wff-app .wff-today-item{align-items:flex-start}
+}
