@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.2.9 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.9'\)/);
+test('v1.3.0 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.3.0'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -345,4 +345,34 @@ test('v1.2.8 photos are attached after saving the transaction',()=>{
  assert.match(js,/data-action="view-receipt"/);
  assert.match(css,/::-webkit-date-and-time-value/);
  assert.match(css,/::-webkit-datetime-edit/);
+});
+
+
+test('1.3.0 registers WP media attachments without publishing receipt originals',()=>{
+ const media=readFileSync('includes/class-wff-receipt-media.php','utf8');
+ const privateStore=readFileSync('includes/class-wff-private-receipts.php','utf8');
+ const store=readFileSync('includes/class-wff-storage.php','utf8');
+ assert.match(store,/attachment_id bigint\(20\) unsigned NOT NULL DEFAULT 0/);
+ assert.match(media,/wp_insert_attachment/);
+ assert.match(media,/post_status.*inherit/);
+ assert.match(media,/guid.*urn:wumetax-finance:receipt/);
+ assert.match(media,/wp_ajax_wff_receipt_image/);
+ assert.match(media,/wp_create_nonce\('wff_receipt_media_/);
+ assert.match(media,/wp_verify_nonce/);
+ assert.match(media,/SELECT id FROM \$m WHERE household_id=%d AND user_id=%d/);
+ assert.match(media,/WFF_Private_Receipts::bytes/);
+ assert.match(media,/Cache-Control: private, no-store/);
+ assert.match(media,/delete_attachment/);
+ assert.match(media,/wp_prepare_attachment_for_js/);
+ assert.doesNotMatch(media,/media_handle_upload|wp_handle_upload\(|wp_generate_attachment_metadata\(/);
+ assert.match(privateStore,/WFF_Receipt_Media::ensure/);
+ assert.match(privateStore,/WFF_Receipt_Media::ensure\(\(int\)\$row\['id'\]\)/);
+});
+test('1.3.0 discovers writable parent outside roots, never public uploads',()=>{
+ const privateStore=readFileSync('includes/class-wff-private-receipts.php','utf8');
+ assert.match(privateStore,/for \(\$i = 0; \$i < 9; \$i\+\+\)/);
+ assert.match(privateStore,/self::inside\(\$root, \$forbidden_root\)/);
+ assert.match(privateStore,/self::inside\(\$candidate, \$root\)/);
+ assert.match(privateStore,/WFF_PRIVATE_RECEIPTS_DIR/);
+ assert.doesNotMatch(privateStore,/wp_handle_upload/);
 });
