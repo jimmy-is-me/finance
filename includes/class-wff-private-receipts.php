@@ -247,7 +247,7 @@ final class WFF_Private_Receipts {
     }
 
     private static function real_file($dir, $name) {
-        if (!preg_match('/^[a-f0-9]{48}\.(jpg|png|webp)$/D', (string) $name)) {
+        if (!preg_match('/^[a-f0-9]{48}\.(jpg|png|webp|enc)$/D', (string) $name)) {
             return self::issue('收據檔案索引不正確');
         }
         $path = $dir . DIRECTORY_SEPARATOR . $name;
@@ -280,35 +280,38 @@ final class WFF_Private_Receipts {
         if (is_wp_error($dir)) { return $dir; }
         $verified = self::validate_bytes($bytes, $mime);
         if (is_wp_error($verified)) { return $verified; }
+        $encrypted_mode = (strpos(basename($dir), '.wff-encrypted-') === 0);
+        $payload = $encrypted_mode ? self::encrypt_image($bytes) : $bytes;
+        if (is_wp_error($payload)) { return $payload; }
         for ($attempt=0; $attempt<3; $attempt++) {
-            $name = bin2hex(random_bytes(24)) . '.' . $verified['extension'];
+            $name = bin2hex(random_bytes(24)) . ($encrypted_mode ? '.enc' : '.'.$verified['extension']);
             $path = self::real_file($dir, $name);
             if (is_wp_error($path)) { return $path; }
             $handle = @fopen($path, 'x+b');
             if (!$handle) { continue; }
             @chmod($path, 0600);
-            $length = strlen($bytes);
+            $length = strlen($payload);
             $written = 0;
             while ($written < $length) {
-                $n = fwrite($handle, substr($bytes, $written));
+                $n = fwrite($handle, substr($payload, $written));
                 if ($n === false || $n === 0) { break; }
                 $written += $n;
             }
             fflush($handle);
             fclose($handle);
             if ($written !== $length || @filesize($path) !== $length ||
-                !hash_equals(hash('sha256', $bytes), (string) @hash_file('sha256', $path))) {
+                !hash_equals(hash('sha256', $payload), (string) @hash_file('sha256', $path))) {
                 @unlink($path);
-                return self::issue('私人圖片寫入或完整性驗證失敗，資料庫未更動');
+                return self::issue('圖片寫入或完整性驗證失敗，資料庫未更動');
             }
-            return array('stored_name'=>$name, 'file_size'=>$length, 'sha256'=>hash('sha256', $bytes));
+            return array('stored_name'=>$name, 'file_size'=>strlen($bytes), 'sha256'=>hash('sha256', $bytes));
         }
-        return self::issue('無法建立私人收據檔案，請確認磁碟空間及權限');
+                return self::issue('無法建立私人收據檔案，請確認磁碟空間及權限');
     }
 
     private static function erase_file($name) {
         if (!$name) { return true; }
-        $dir = self::directory();
+        $dir = self::directory_for_file($name);
         if (is_wp_error($dir)) { return false; }
         $path = self::real_file($dir, $name);
         if (is_wp_error($path)) { return false; }
@@ -433,15 +436,19 @@ final class WFF_Private_Receipts {
             return new WP_Error('wff_receipt_missing', '尚未附加收據', array('status'=>404));
         }
         if (!empty($row['stored_name'])) {
-            $dir = self::directory();
+            $encrypted = (substr($row['stored_name'],-4)==='.enc');
+            $dir = self::directory_for_file($row['stored_name']);
             if (is_wp_error($dir)) { return $dir; }
             $path = self::real_file($dir, $row['stored_name']);
             if (is_wp_error($path)) { return $path; }
-            if (!is_readable($path) || filesize($path) > self::MAX_BYTES) {
-                return self::issue('私人收據暫時無法讀取，請聯絡管理員檢查備份');
+            if (!is_readable($path) || filesize($path) > self::MAX_BYTES + 64) {
+                return self::issue('收據暫時無法讀取，請聯絡管理員檢查備份');
             }
-            $bytes = @file_get_contents($path);
-            if ($bytes === false || !hash_equals((string)$row['sha256'],hash('sha256',$bytes))) {
+            $payload = @file_get_contents($path);
+            if ($payload === false) { return self::issue('收據檔案讀取失敗'); }
+            $bytes = $encrypted ? self::decrypt_image($payload) : $payload;
+            if (is_wp_error($bytes)) { return $bytes; }
+            if (!hash_equals((string)$row['sha256'],hash('sha256',$bytes))) {
                 return self::issue('收據檔案完整性驗證失敗，請聯絡管理員');
             }
         } elseif (!empty($row['image_base64'])) {
