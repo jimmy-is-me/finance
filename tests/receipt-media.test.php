@@ -1,6 +1,7 @@
 <?php
 // Focused PHP mock for the WordPress private Media Library bridge.
 define('ABSPATH', '/tmp/wordpress/');
+define('ARRAY_A', 'ARRAY_A');
 class MockDb {
     public $prefix = 'wp_';
     public function prepare($sql, ...$args) {
