@@ -140,7 +140,10 @@ final class WFF_Private_Receipts {
             "SELECT COUNT(*) FROM $table WHERE stored_name='' AND LENGTH(image_base64)>0"
         );
         $dir = self::directory();
+        $linked = (int)$wpdb->get_var("SELECT COUNT(*) FROM $table WHERE attachment_id>0");
+        $unlinked = (int)$wpdb->get_var("SELECT COUNT(*) FROM $table WHERE attachment_id=0 AND stored_name<>''");
         return array(
+            'linked'=>$linked, 'unlinked'=>$unlinked,
             'available' => !is_wp_error($dir),
             'directory' => is_wp_error($dir) ? '' : $dir,
             'message' => is_wp_error($dir) ? $dir->get_error_message() : '私人目錄可用（位於已知網站公開根目錄外）',
