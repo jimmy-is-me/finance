@@ -55,6 +55,10 @@ final class WFF_Private_Receipts {
             return self::issue('收據目錄必須是主機上的絕對實體路徑，不可使用公開網址或相對路徑。');
         }
         $path = self::normalized($raw);
+        if (in_array(basename($path), array('.', '..'), true) || strpos($path, '/../') !== false
+            || strpos($path, '/./') !== false) {
+            return self::issue('私人收據目錄包含不安全的路徑片段。');
+        }
         $parent = realpath(dirname($path));
         if (!$parent || is_link($path) || !$path || $path === '/') {
             return self::issue('私人收據目錄的上層路徑不存在，或目標是不安全的符號連結。');
@@ -77,7 +81,8 @@ final class WFF_Private_Receipts {
             }
         }
         $actual = realpath($candidate);
-        if (!$actual || !is_dir($actual) || is_link($candidate)) {
+        if (!$actual || !is_dir($actual) || is_link($candidate) ||
+            self::normalized($actual) !== self::normalized($candidate)) {
             return self::issue('私人收據目錄驗證失敗，已停止收據上傳。');
         }
         foreach ($forbidden as $root) {
