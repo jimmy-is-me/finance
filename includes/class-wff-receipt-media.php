@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 /**
  * WP attachment records are only the catalogue for Finance receipts.
  * Image bytes remain outside public web roots. No physical file is registered
- * via wp_handle_upload(), media_handle_upload() or _wp_attached_file.
+ * by WordPress public upload handlers; _wp_attached_file is intentionally absent.
  */
 final class WFF_Receipt_Media {
     public static function init() {
