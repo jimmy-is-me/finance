@@ -322,7 +322,8 @@ test('v1.2.9 private receipts enforce family authorization and no public media U
  assert.match(store,/wp_mkdir_p/);
  assert.match(store,/realpath\(\$_SERVER\['DOCUMENT_ROOT'\]\)/);
  assert.match(store,/self::inside\(\$actual, \$root\)/);
- assert.doesNotMatch(store,/wp_upload_dir\(.*\).*basedir.*mkdir/s);
+ assert.match(store,/dirname\(\$app\) \. '\/\.wff-receipts-'/);
+ assert.match(store,/self::inside\(\$candidate, \$root\)/);
 });
 test('old database receipts migrate one batch at a time and only clear after write verified',()=>{
  const store=readFileSync('includes/class-wff-private-receipts.php','utf8');
