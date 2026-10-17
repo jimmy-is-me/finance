@@ -49,7 +49,7 @@ final class WFF_Private_Receipts {
         }
         $explicit = defined('WFF_PRIVATE_RECEIPTS_DIR') && WFF_PRIVATE_RECEIPTS_DIR;
         $raw = $explicit ? WFF_PRIVATE_RECEIPTS_DIR :
-            dirname($app) . '/.wff-receipts-' . substr(hash_hmac('sha256', home_url('/'), wp_salt('auth')), 0, 16);
+            dirname($app) . '/.wff-receipts-' . substr(hash('sha256', $app), 0, 16);
         if (!is_string($raw) || strpos($raw, '://') !== false ||
             !preg_match('~^(?:/|[A-Za-z]:[\\\\/])~', $raw)) {
             return self::issue('收據目錄必須是主機上的絕對實體路徑，不可使用公開網址或相對路徑。');
