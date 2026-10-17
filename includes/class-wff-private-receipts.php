@@ -48,6 +48,16 @@ final class WFF_Private_Receipts {
             return self::issue('無法驗證 WordPress 與網站公開根目錄，請設定私人收據目錄並檢查伺服器 DOCUMENT_ROOT。');
         }
         $explicit = defined('WFF_PRIVATE_RECEIPTS_DIR') && WFF_PRIVATE_RECEIPTS_DIR;
+        // Past documentation used placeholder /home/account and /home/example.
+        // Ignore only these *exact examples*, so a copied demonstration path
+        // does not permanently block zero-configuration private storage.
+        $sample_paths = array(
+            '/home/account/private/finance-receipts',
+            '/home/example/private/finance-receipts',
+        );
+        if ($explicit && in_array(self::normalized(WFF_PRIVATE_RECEIPTS_DIR), $sample_paths, true)) {
+            $explicit = false;
+        }
         $legacy = self::normalized(dirname($app) . '/.wff-receipts-' . substr(hash('sha256', $app), 0, 16));
         $forbidden = array($app, $doc, $content);
         $uploads = wp_upload_dir(null, false);
