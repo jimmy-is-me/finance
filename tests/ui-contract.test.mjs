@@ -403,7 +403,7 @@ test('1.3.1 camera receipts are WebP <=5MB before upload',()=>{
  assert.match(js,/if\(!res\.ok\)throw new Error/);
  assert.match(js,/resetModal\(\);\s*await reload\(\)/);
 });
-test('1.3.1 category is above note and dashboard shows today's records independently',()=>{
+test('1.3.1 category precedes note and dashboard includes current day',()=>{
  const api=readFileSync('includes/class-wff-api.php','utf8');
  const formStart=js.indexOf("if(type==='transaction'){");
  const formEnd=js.indexOf("} else if(type==='loan'){",formStart);
