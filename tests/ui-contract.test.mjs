@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.2.7 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.2.8'\)/);
+test('v1.2.9 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.2.9'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -300,20 +300,42 @@ test('monthly repayment is a manual one-step journal with bounded navigation',()
  }
 });
 
-test('v1.2.8 private receipts are household-scoped and require editor upload',()=>{
+test('v1.2.9 private receipts enforce family authorization and no public media URL',()=>{
  const api=readFileSync('includes/class-wff-api.php','utf8');
+ const store=readFileSync('includes/class-wff-private-receipts.php','utf8');
  const db=readFileSync('includes/class-wff-storage.php','utf8');
  assert.match(db,/image_base64 longtext NOT NULL/);
- assert.match(db,/UNIQUE KEY transaction_id \(transaction_id\)/);
+ assert.match(db,/stored_name varchar\(80\) NOT NULL DEFAULT ''/);
+ assert.match(db,/sha256 char\(64\)/);
  assert.match(api,/public static function save_receipt/);
  assert.match(api,/public static function get_receipt/);
  assert.match(api,/public static function delete_receipt/);
  assert.match(api,/self::role\(\$hid,'editor'\)/);
- assert.match(api,/getimagesize/);
- assert.match(api,/3\*1024\*1024/);
- assert.match(api,/base64_encode/);
+ assert.match(api,/WFF_Private_Receipts::save/);
+ assert.match(api,/WFF_Private_Receipts::fetch/);
  assert.match(api,/SELECT id FROM \$t WHERE household_id=%d AND id=%d/);
  assert.match(api,/AS has_receipt/);
+ assert.match(store,/getimagesizefromstring/);
+ assert.match(store,/3145728/);
+ assert.match(store,/bin2hex\(random_bytes\(24\)\)/);
+ assert.match(store,/fopen\(\$path, 'x\+b'\)/);
+ assert.match(store,/wp_mkdir_p/);
+ assert.match(store,/realpath\(\$_SERVER\['DOCUMENT_ROOT'\]\)/);
+ assert.match(store,/self::inside\(\$actual, \$root\)/);
+ assert.doesNotMatch(store,/wp_upload_dir\(.*\).*basedir.*mkdir/s);
+});
+test('old database receipts migrate one batch at a time and only clear after write verified',()=>{
+ const store=readFileSync('includes/class-wff-private-receipts.php','utf8');
+ assert.match(store,/const BATCH_SIZE = 3/);
+ assert.match(store,/wff_receipts_migrate_batch/);
+ assert.match(store,/base64_decode\(\$row\['image_base64'\], true\)/);
+ assert.match(store,/if \(\$updated !== 1\)/);
+ assert.match(store,/hash_equals/);
+ assert.match(store,/array\('image_base64'=>''\)/);
+ assert.match(store,/!empty\(\$row\['image_base64'\]\)/);
+ assert.match(store,/data_url/); // Legacy reading API is unchanged for the app
+ assert.match(store,/Cache-Control', 'private, no-store/);
+ assert.match(admin,/WFF_Private_Receipts::status/);
 });
 test('v1.2.8 photos are attached after saving the transaction',()=>{
  assert.match(js,/name="receipt" accept="image\/jpeg,image\/png,image\/webp"/);
