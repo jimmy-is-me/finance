@@ -31,6 +31,7 @@ jobs:
         run: |
           php tests/private-receipts.test.php safe
           php tests/private-receipts.test.php unsafe
+          php tests/receipt-media.test.php
       - name: Package installable plugin ZIP
         run: |
           mkdir -p dist staging/wumetax-finance
