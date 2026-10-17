@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.3.1 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.3.1'\)/);
+test('v1.3.2 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.3.2'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -414,4 +414,20 @@ test('1.3.1 category precedes note and dashboard includes current day',()=>{
  assert.match(api,/'today'=>array\(/);
  assert.match(js,/今日記帳/);
  assert.match(js,/const today=d\.today/);
+});
+
+test('1.3.2 encrypted receipt fallback never persists readable image bytes beneath uploads', () => {
+  const store=readFileSync('includes/class-wff-private-receipts.php','utf8');
+  assert.match(store, /aes-256-gcm/);
+  assert.match(store, /WFFENC1/);
+  assert.match(store, /wp_upload_dir/);
+  assert.match(store, /\.enc'/);
+  assert.match(store, /directory_for_file\(\$row\['stored_name'\]\)/);
+  assert.match(store, /decrypt_image\(\$payload\)/);
+  assert.match(store, /hash_equals/);
+  assert.match(store, /wff_receipt_aes256_key/);
+  assert.match(store, /base64_encode\(random_bytes\(32\)\)/);
+  assert.match(store, /add_option\('wff_receipt_aes256_key'/);
+  assert.match(store, /glob\(\$dir \. '\/\*\.enc'\)/);
+  assert.match(store, /getimagesizefromstring/);
 });
