@@ -326,7 +326,6 @@
       '<span>總支出 <b>'+money(expense)+'</b></span>'+
       '<span>家庭結餘 <b>'+money(Number(f.income)-Number(f.expense))+'</b></span>'+
       '<span>公司結餘 <b>'+money(Number(b.income)-Number(b.expense))+'</b></span></div>'+
-      getCharts()+
       '<section class="wff-panel wff-today-panel"><div class="wff-panel-head"><h2>今日記帳</h2>'+
       '<span class="wff-pill">'+e(today.date)+' · '+e(today.total)+' 筆</span></div>'+
       '<div class="wff-today-stats"><span>今日收入 <b>'+money(today.totals?.income||0)+'</b></span>'+
@@ -338,6 +337,7 @@
           '<strong>'+money(x.amount)+'</strong></div>').join('')+'</div>':
           empty('今天還沒有記帳，按「新增記帳」即可建立第一筆'))+
       (today.total>20?'<p class="wff-small">今日顯示最新 20 筆。</p>':'')+'</section>'+
+      getCharts()+
       '<div class="wff-two"><section class="wff-panel"><div class="wff-panel-head"><h2>家庭每日花費明細</h2><span class="wff-pill">DAILY</span></div>'+
       (d.daily?.length?'<div class="wff-tablewrap"><table><thead><tr><th>日期</th><th>餐飲</th><th>其他</th><th>總計</th></tr></thead><tbody>'+
         d.daily.slice(0,12).map(x=>'<tr><td>'+e(x.occurred_on.slice(5))+'</td><td>'+money(x.food)+'</td><td>'+money(x.other)+'</td><td><b>'+money(x.total)+'</b></td></tr>').join('')+'</tbody></table></div>':
