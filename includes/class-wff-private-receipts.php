@@ -40,7 +40,7 @@ final class WFF_Private_Receipts {
      * For nonstandard hosting, set WFF_PRIVATE_RECEIPTS_DIR in wp-config.php
      * to an absolute directory outside every configured webserver document root.
      */
-    public static function directory() {
+    private static function private_directory() {
         $app = realpath(ABSPATH);
         $doc = !empty($_SERVER['DOCUMENT_ROOT']) ? realpath($_SERVER['DOCUMENT_ROOT']) : false;
         $content = realpath(WP_CONTENT_DIR);
@@ -131,6 +131,100 @@ final class WFF_Private_Receipts {
             return self::issue('私人收據目錄不可寫入，請調整主機權限。');
         }
         return $actual;
+    }
+
+    /**
+     * When a host cannot create a persistent directory outside its public
+     * document root (common with managed Nginx), fall back to *encrypted*
+     * image containers. Never store image plaintext beneath uploads.
+     *
+     * Browsers may download opaque .enc bytes if the web server exposes the
+     * directory, but these are AES-256-GCM ciphertext, not JPEG/PNG/WebP data.
+     * Only the authenticated Finance endpoint decrypts them.
+     */
+    private static function encrypted_directory() {
+        if (!function_exists('openssl_encrypt') || !in_array('aes-256-gcm', openssl_get_cipher_methods(), true)) {
+            return self::issue('主機沒有 AES-256-GCM 加密功能，無法安全啟用加密收據儲存。');
+        }
+        $upload = wp_upload_dir(null, false);
+        $basedir = !empty($upload['basedir']) ? realpath($upload['basedir']) : false;
+        if (!$basedir || !is_dir($basedir)) {
+            return self::issue('無法找到 WordPress 媒體目錄，收據沒有安全的檔案儲存空間。');
+        }
+        $dir = $basedir . '/.wff-encrypted-' . substr(hash('sha256', realpath(ABSPATH)), 0, 16);
+        if (is_link($dir) || (!is_dir($dir) && !wp_mkdir_p($dir))) {
+            return self::issue('無法建立 Finance 加密收據目錄，請檢查主機磁碟權限。');
+        }
+        $real = realpath($dir);
+        if (!$real || $real !== $dir || !is_dir($real) || !is_writable($real)) {
+            return self::issue('加密收據目錄無法寫入，已拒絕將照片放入公開媒體庫。');
+        }
+        @chmod($real, 0700);
+        // Defence in depth only; Nginx does not consume .htaccess.
+        if (!file_exists($real . '/index.php')) {
+            @file_put_contents($real . '/index.php', "<?php http_response_code(403); exit;\n", LOCK_EX);
+        }
+        if (!file_exists($real . '/.htaccess')) {
+            @file_put_contents($real . '/.htaccess', "Require all denied\nDeny from all\n", LOCK_EX);
+        }
+        $key = self::encryption_key();
+        return is_wp_error($key) ? $key : $real;
+    }
+
+    private static function encryption_key() {
+        $encoded = get_option('wff_receipt_aes256_key', '');
+        if (!$encoded) {
+            // If a key went missing, generating a new one would make already
+            // saved ciphertext permanently unreadable. Fail closed.
+            $upload = wp_upload_dir(null, false);
+            $base = !empty($upload['basedir']) ? realpath($upload['basedir']) : false;
+            $dir = $base ? $base . '/.wff-encrypted-' . substr(hash('sha256', realpath(ABSPATH)), 0, 16) : '';
+            if ($dir && glob($dir . '/*.enc')) {
+                return self::issue('找不到加密金鑰，但加密收據仍存在；請還原原本的 WordPress 資料庫備份，切勿產生新金鑰。');
+            }
+            $generated = base64_encode(random_bytes(32));
+            add_option('wff_receipt_aes256_key', $generated, '', false);
+            $encoded = get_option('wff_receipt_aes256_key', '');
+        }
+        $key = is_string($encoded) ? base64_decode($encoded, true) : false;
+        if (!is_string($key) || strlen($key) !== 32) {
+            return self::issue('Finance 收據加密金鑰不存在或已損壞，請檢查資料庫備份。');
+        }
+        return $key;
+    }
+
+    private static function encrypt_image($bytes) {
+        $key=self::encryption_key();
+        if (is_wp_error($key)) { return $key; }
+        $iv=random_bytes(12); $tag='';
+        $encrypted=openssl_encrypt($bytes, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, 'WFF-RECEIPT-v1', 16);
+        if ($encrypted === false || strlen($tag) !== 16) {
+            return self::issue('收據加密失敗，未寫入照片。');
+        }
+        return 'WFFENC1' . $iv . $tag . $encrypted;
+    }
+
+    private static function decrypt_image($bytes) {
+        if (!is_string($bytes) || strlen($bytes)<35 || substr($bytes,0,7)!=='WFFENC1') {
+            return self::issue('私人收據加密檔格式不正確。');
+        }
+        $key=self::encryption_key();
+        if (is_wp_error($key)) { return $key; }
+        $clear=openssl_decrypt(substr($bytes,35), 'aes-256-gcm', $key, OPENSSL_RAW_DATA,
+            substr($bytes,7,12), substr($bytes,19,16), 'WFF-RECEIPT-v1');
+        return $clear===false ? self::issue('圖片解密或完整性驗證失敗。') : $clear;
+    }
+
+    private static function directory_for_file($name) {
+        if (substr((string)$name, -4)==='.enc') {
+            return self::encrypted_directory();
+        }
+        return self::private_directory();
+    }
+
+    public static function directory() {
+        $private=self::private_directory();
+        return !is_wp_error($private) ? $private : self::encrypted_directory();
     }
 
     public static function status() {
