@@ -240,7 +240,12 @@ final class WFF_Private_Receipts {
             'linked'=>$linked, 'unlinked'=>$unlinked,
             'available' => !is_wp_error($dir),
             'directory' => is_wp_error($dir) ? '' : $dir,
-            'message' => is_wp_error($dir) ? $dir->get_error_message() : '私人目錄可用（位於已知網站公開根目錄外）',
+            'storage_mode' => is_wp_error($dir) ? 'unavailable' :
+                (strpos(basename($dir), '.wff-encrypted-')===0 ? 'encrypted' : 'private'),
+            'message' => is_wp_error($dir) ? $dir->get_error_message() :
+                (strpos(basename($dir), '.wff-encrypted-')===0 ?
+                    'AES-256-GCM 加密檔案儲存正常（檔案位於媒體目錄，但不是可直接開啟的原圖）' :
+                    '非公開私人目錄正常（位於網站公開根目錄外）'),
             'pending' => $pending,
             'last_error' => (string) get_option('wff_receipts_last_migration_error', ''),
         );
