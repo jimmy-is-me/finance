@@ -167,6 +167,7 @@ final class WFF_Storage {
             mime varchar(32) NOT NULL,
             image_base64 longtext NOT NULL,
             stored_name varchar(80) NOT NULL DEFAULT '',
+            attachment_id bigint(20) unsigned NOT NULL DEFAULT 0,
             file_size bigint(20) unsigned NOT NULL DEFAULT 0,
             sha256 char(64) NOT NULL DEFAULT '',
             filename varchar(190) NOT NULL DEFAULT '',
@@ -174,6 +175,7 @@ final class WFF_Storage {
             created_at datetime NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY transaction_id (transaction_id),
+            KEY attachment_id (attachment_id),
             KEY household_transaction (household_id,transaction_id)
         ) $c;");
         // dbDelta adds missing columns/indexes without dropping historical data.
