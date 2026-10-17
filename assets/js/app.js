@@ -660,11 +660,12 @@
         '<div id="wff-transaction-dynamic">'+transactionFields(d)+'</div>'+
         field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例如：晚餐、主機年費">')+
         '<div class="wff-receipt-field"><span class="wff-receipt-heading">收據照片（選填）</span>'+
-        '<label class="wff-receipt-pick">📷 拍照或選取圖片<input type="file" name="receipt" accept="image/jpeg,image/png,image/webp" class="wff-receipt-input"></label>'+
+        '<label class="wff-receipt-pick">📷 拍照或選取圖片<input type="file" name="receipt" accept="image/*" class="wff-receipt-input"></label>'+
         '<div class="wff-receipt-preview" aria-live="polite"></div>'+
+        '<div class="wff-receipt-progress" role="status" aria-live="polite"></div>'+
         (d.id&&Number(d.has_receipt)?'<button type="button" class="wff-textbtn" data-action="view-receipt" data-id="'+e(d.id)+'">查看已存收據</button>'+
         '<button type="button" class="wff-textbtn" data-action="remove-receipt" data-id="'+e(d.id)+'">刪除已存收據</button>':'')+
-        '<p class="wff-small">JPG、PNG、WebP，最多 3 MB。圖片儲存在資料庫，限家庭成員查看。</p></div>'+
+        '<p class="wff-small">手機照片會自動轉成 WebP 儲存，轉檔後需小於 5 MB。收據存放於主機私人目錄，需家庭權限才能檢視。</p></div>'+
         '<button class="wff-button wff-primary" type="submit">儲存記帳 ✓</button></form>';
     } else if(type==='loan'){
       title=d.id?'編輯每月繳款':'新增每月繳款';
@@ -759,29 +760,88 @@
     if(view==='loans') S.loans=await request(path('loans?offset='+S.loanWindowOffset));
     render();window.scrollTo({top:0,behavior:'auto'});
   }
-  function openModal(type,item) { S.modal=type;S.draft={...(item||{})};render(); }
-  function resetModal() { S.modal=null;S.draft={};render(); }
+  function clearReceiptDraft() {
+    if(S.receiptPreviewUrl)URL.revokeObjectURL(S.receiptPreviewUrl);
+    S.receiptPreviewUrl=null;
+    S.receiptFile=null;
+    S.receiptProcessing=null;
+  }
+  function openModal(type,item) {
+    clearReceiptDraft();
+    S.modal=type;S.draft={...(item||{})};render();
+    if(S.modal)requestAnimationFrame(()=>root.querySelector('.wff-modal-close')?.focus({preventScroll:true}));
+  }
+  function resetModal() {
+    clearReceiptDraft();
+    S.modal=null;S.draft={};render();
+  }
   function getFormData(form) { return Object.fromEntries(new FormData(form).entries()); }
+  const receiptMaxBytes = 5 * 1024 * 1024;
+  // Canvas encoding strips camera EXIF metadata, reduces huge camera photos,
+  // and ensures that all newly uploaded receipts are WebP, max 5 MB.
+  async function compressReceipt(file) {
+    if(!file || !file.type.startsWith('image/'))throw new Error('請選擇收據照片');
+    if(file.size > 40*1024*1024)throw new Error('原始照片超過 40 MB，請先縮小後再選擇');
+    const originalUrl=URL.createObjectURL(file);
+    try {
+      const img=new Image();
+      await new Promise((resolve,reject)=>{
+        img.onload=resolve;
+        img.onerror=()=>reject(new Error('無法讀取相機照片，請先將 HEIC 等格式轉為 JPG 再上傳'));
+        img.src=originalUrl;
+      });
+      const w=img.naturalWidth,h=img.naturalHeight;
+      if(!w||!h)throw new Error('無法辨識圖片尺寸');
+      let factor=Math.min(1,2400/Math.max(w,h));
+      for(const quality of [0.84,0.72,0.60,0.48,0.36]){
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.max(1,Math.round(w*factor));
+        canvas.height=Math.max(1,Math.round(h*factor));
+        const ctx=canvas.getContext('2d');
+        if(!ctx)throw new Error('此瀏覽器無法處理圖片轉檔');
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));
+        canvas.width=0;canvas.height=0;
+        if(!blob||blob.type!=='image/webp')throw new Error('瀏覽器無法轉換 WebP，請更新 Safari 或 Chrome');
+        if(blob.size<=receiptMaxBytes){
+          return new File([blob], 'receipt-'+Date.now()+'.webp',{type:'image/webp'});
+        }
+        factor*=0.8;
+      }
+      throw new Error('照片轉檔後仍超過 5 MB，請換一張較小的圖片');
+    } finally {URL.revokeObjectURL(originalUrl);}
+  }
   async function submitTransaction(data,form) {
-    const id=S.draft.id;
-    const photo=form?.querySelector('[name="receipt"]')?.files?.[0];
-    if(photo && (photo.size>3*1024*1024 || !['image/jpeg','image/png','image/webp'].includes(photo.type))){
-      throw new Error('收據僅支援 3 MB 以下 JPG、PNG、WebP 圖片');
+    // Wait for background compression *before* saving the transaction.
+    if(S.receiptProcessing)await S.receiptProcessing;
+    const photo=S.receiptFile;
+    if(photo && (photo.size>receiptMaxBytes || photo.type!=='image/webp')){
+      throw new Error('收據必須轉成 5 MB 以下 WebP 圖片');
     }
+    const id=S.draft.id;
     const saved=await request(path('transactions'+(id?'/'+id:'')),id?'PUT':'POST',data);
     const savedId=Number(saved?.id||id);
-    // Preserve the saved record ID if its photo upload fails; retry must not duplicate the expense.
-    if(savedId)S.draft.id=savedId;
+    if(savedId)S.draft.id=savedId; // retry does not duplicate a transaction
+    let photoWarning='';
     if(photo){
-      if(!savedId)throw new Error('記帳已保存，但尚未取得記帳編號，請重新編輯上傳收據');
-      const multi=new FormData();multi.append('receipt',photo,photo.name);
-      const res=await fetch(config.rest+path('transactions/'+savedId+'/receipt'),{
-        method:'POST',credentials:'same-origin',headers:{'X-WP-Nonce':config.nonce},body:multi
-      });
-      const body=await res.json().catch(()=>({}));
-      if(!res.ok)throw new Error('記帳已儲存，但收據上傳失敗：'+(body.message||'請重試'));
+      try {
+        if(!savedId)throw new Error('無法取得儲存編號');
+        const multi=new FormData();
+        multi.append('receipt',photo,photo.name);
+        const res=await fetch(config.rest+path('transactions/'+savedId+'/receipt'),{
+          method:'POST',credentials:'same-origin',headers:{'X-WP-Nonce':config.nonce},body:multi
+        });
+        const body=await res.json().catch(()=>({}));
+        if(!res.ok)throw new Error(body.message||'上傳失敗');
+      } catch(error) {
+        // Financial record succeeded: close the dialog anyway and warn that
+        // the receipt needs to be added from the existing record's Edit button.
+        photoWarning='記帳已儲存，但收據上傳失敗：'+(error.message||'請重新編輯補上');
+      }
     }
-    resetModal();await reload();show(id?'已更新記帳':'已新增記帳');
+    resetModal();
+    await reload();
+    show(photoWarning || (id?'已更新記帳':'已新增記帳'));
   }
   function encodeCSVCell(value) {
     const s=String(value??'');
@@ -979,13 +1039,25 @@
   });
   root.addEventListener('change',ev=>{
     if(ev.target.matches('.wff-receipt-input')){
-      const file=ev.target.files?.[0], preview=ev.target.closest('.wff-receipt-field')?.querySelector('.wff-receipt-preview');
-      if(file&&preview){
-        if(file.size>3*1024*1024){show('圖片須小於 3 MB');ev.target.value='';return;}
-        const reader=new FileReader();
-        reader.onload=()=>{preview.innerHTML='<img alt="收據預覽" src="'+e(reader.result)+'">';};
-        reader.readAsDataURL(file);
-      }
+      const input=ev.target,file=input.files?.[0],area=input.closest('.wff-receipt-field');
+      const progress=area?.querySelector('.wff-receipt-progress');
+      const preview=area?.querySelector('.wff-receipt-preview');
+      if(!file)return;
+      clearReceiptDraft();
+      if(progress)progress.textContent='正在壓縮照片並轉為 WebP…';
+      S.receiptProcessing=compressReceipt(file).then(compressed=>{
+        S.receiptFile=compressed;
+        S.receiptPreviewUrl=URL.createObjectURL(compressed);
+        if(preview)preview.innerHTML='<img alt="收據預覽" src="'+e(S.receiptPreviewUrl)+'">';
+        if(progress)progress.textContent='已轉換為 WebP，'+(compressed.size/1024/1024).toFixed(2)+' MB，儲存記帳時一起上傳';
+      }).catch(error=>{
+        S.receiptFile=null;
+        input.value='';
+        if(progress)progress.textContent=error.message||'圖片轉檔失敗';
+        throw error;
+      });
+      // Catch errors here so rejected conversion doesn't create an unhandled promise.
+      S.receiptProcessing.catch(()=>{});
     }
     const t=ev.target;
     if(t.matches('.wff-date-control input[type="date"]')){
