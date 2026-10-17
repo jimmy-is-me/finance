@@ -174,6 +174,13 @@ final class WFF_API {
             $where .= " AND t.occurred_on LIKE %s";
             $params[] = self::month($filters['month']) . '%';
         }
+        if (!empty($filters['date'])) {
+            $day = self::date($filters['date']);
+            if ($day) {
+                $where .= " AND t.occurred_on=%s";
+                $params[] = $day;
+            }
+        }
         if (in_array($filters['scope'] ?? '', array('family','business'), true)) {
             $where .= " AND t.scope=%s";
             $params[] = $filters['scope'];
@@ -596,6 +603,20 @@ final class WFF_API {
              GROUP BY t.occurred_on ORDER BY t.occurred_on DESC", $hid, $month.'%'
         ), ARRAY_A);
         $recent = self::entries($hid, array('month'=>$month), 7, 0);
+        // Always use the site's local current day, independent of the selected
+        // dashboard month. Transfers count as records but not income/expense.
+        $today = wp_date('Y-m-d');
+        $today_rows = self::entries($hid, array('date'=>$today), 20, 0);
+        $today_totals = array('income'=>0.0, 'expense'=>0.0, 'transfer'=>0.0);
+        $today_aggregate = $wpdb->get_results($wpdb->prepare(
+            "SELECT kind,COALESCE(SUM(amount),0) amount FROM $t WHERE household_id=%d AND occurred_on=%s GROUP BY kind",
+            $hid, $today
+        ), ARRAY_A);
+        foreach ($today_aggregate as $entry) {
+            if (isset($today_totals[$entry['kind']])) {
+                $today_totals[$entry['kind']] = (float)$entry['amount'];
+            }
+        }
         $dates = array();
         $from = DateTimeImmutable::createFromFormat('!Y-m', $month);
         for ($i=5; $i>=0; $i--) {
@@ -622,7 +643,10 @@ final class WFF_API {
         ), ARRAY_A);
         return array(
             'month'=>$month,'totals'=>$totals,'categories'=>$categories,'daily'=>$daily,
-            'recent'=>$recent['items'],'trend'=>array_values($dates),'cards'=>$cards,
+            'recent'=>$recent['items'],'today'=>array(
+                'date'=>$today,'total'=>$today_rows['total'],
+                'items'=>$today_rows['items'],'totals'=>$today_totals
+            ),'trend'=>array_values($dates),'cards'=>$cards,
             'insights'=>WFF_Insights::dashboard($hid,$month,$cards)
         );
     }
