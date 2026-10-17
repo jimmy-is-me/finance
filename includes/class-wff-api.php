@@ -327,7 +327,8 @@ final class WFF_API {
         $id = (int) $r['id'];
         $deleted = $wpdb->delete(WFF_Storage::table('transactions'), array('id' => $id, 'household_id' => $hid));
         if (!$deleted) { return self::error('找不到此交易', 404); }
-        $wpdb->delete(WFF_Storage::table('receipts'),array('household_id'=>$hid,'transaction_id'=>$id));
+        $cleanup=WFF_Private_Receipts::remove($hid,$id);
+        if(is_wp_error($cleanup)){ return $cleanup; }
         WFF_Storage::activity($hid, 'delete_transaction', $id);
         return array('deleted' => true);
     }
@@ -340,68 +341,30 @@ final class WFF_API {
         ));
     }
     public static function get_receipt($r) {
-        global $wpdb;
         $hid=(int)$r['hid']; $id=(int)$r['id'];
         $role=self::role($hid);
         if(is_wp_error($role))return $role;
         if(!self::receipt_tx($hid,$id))return self::error('找不到記帳',404);
-        $table=WFF_Storage::table('receipts');
-        $row=$wpdb->get_row($wpdb->prepare(
-            "SELECT mime,image_base64,filename FROM $table WHERE household_id=%d AND transaction_id=%d",
-            $hid,$id
-        ),ARRAY_A);
-        if(!$row)return self::error('尚未附加收據',404);
-        return array('mime'=>$row['mime'],'name'=>$row['filename'],
-            'data_url'=>'data:'.$row['mime'].';base64,'.$row['image_base64']);
+        return WFF_Private_Receipts::fetch($hid,$id);
     }
     public static function save_receipt($r) {
-        global $wpdb;
-        $hid=(int)$r['hid'];$id=(int)$r['id'];
+        $hid=(int)$r['hid']; $id=(int)$r['id'];
         $role=self::role($hid,'editor');
         if(is_wp_error($role))return $role;
         if(!self::receipt_tx($hid,$id))return self::error('找不到記帳',404);
         $files=$r->get_file_params();
-        $file=$files['receipt']??null;
-        if(!$file || !isset($file['tmp_name'],$file['size']) ||
-            (int)$file['size']<=0 || (int)$file['size']>3*1024*1024 ||
-            !is_uploaded_file($file['tmp_name'])) {
-            return self::error('請選擇 3 MB 以內的 JPG、PNG 或 WebP 收據圖片');
-        }
-        if(!empty($file['error']))return self::error('圖片上傳失敗，請重試');
-        // Verify actual image contents, never rely on extension or client MIME.
-        $image=@getimagesize($file['tmp_name']);
-        $allowed=array('image/jpeg','image/png','image/webp');
-        if(!$image || !in_array($image['mime']??'', $allowed,true) ||
-            ($image[0]??0)>6000 || ($image[1]??0)>6000){
-            return self::error('圖片格式不正確，僅支援 6000px 內的 JPG、PNG、WebP');
-        }
-        $bytes=file_get_contents($file['tmp_name']);
-        if($bytes===false)return self::error('無法讀取收據',500);
-        $table=WFF_Storage::table('receipts');
-        $data=array('household_id'=>$hid,'transaction_id'=>$id,
-            'mime'=>$image['mime'],'filename'=>mb_substr(sanitize_file_name($file['name']??'receipt.jpg'),0,190),
-            'image_base64'=>base64_encode($bytes),'uploaded_by'=>get_current_user_id(),
-            'created_at'=>current_time('mysql',true));
-        $exists=$wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM $table WHERE household_id=%d AND transaction_id=%d", $hid,$id
-        ));
-        $ok=$exists?$wpdb->update($table,$data,array('id'=>(int)$exists,'household_id'=>$hid)):
-            $wpdb->insert($table,$data);
-        if($ok===false)return self::error('儲存收據失敗，請檢查資料庫空間',500);
-        WFF_Storage::activity($hid,'save_receipt',$id);
-        return array('saved'=>true,'transaction_id'=>$id);
+        $saved=WFF_Private_Receipts::save($hid,$id,$files['receipt']??null,get_current_user_id());
+        if(!is_wp_error($saved))WFF_Storage::activity($hid,'save_receipt',$id);
+        return $saved;
     }
     public static function delete_receipt($r) {
-        global $wpdb;
-        $hid=(int)$r['hid'];$id=(int)$r['id'];
+        $hid=(int)$r['hid']; $id=(int)$r['id'];
         $role=self::role($hid,'editor');
         if(is_wp_error($role))return $role;
         if(!self::receipt_tx($hid,$id))return self::error('找不到記帳',404);
-        $ok=$wpdb->delete(WFF_Storage::table('receipts'),
-            array('household_id'=>$hid,'transaction_id'=>$id));
-        if($ok===false)return self::error('刪除收據失敗',500);
-        WFF_Storage::activity($hid,'delete_receipt',$id);
-        return array('deleted'=>(bool)$ok);
+        $deleted=WFF_Private_Receipts::remove($hid,$id);
+        if(!is_wp_error($deleted))WFF_Storage::activity($hid,'delete_receipt',$id);
+        return $deleted;
     }
 
     public static function save_category($r) {
