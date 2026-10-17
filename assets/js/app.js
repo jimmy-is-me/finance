@@ -303,6 +303,8 @@
         '</div>';
     };
     const latest=d.recent||[];
+    const today=d.today||{date:new Date().toLocaleDateString('sv-SE'),total:0,items:[],
+      totals:{income:0,expense:0,transfer:0}};
     return '<div class="wff-pagehead"><div><div class="wff-kicker">OVERVIEW / 財務總覽</div>'+
       '<h1>家庭與公司 <span class="wff-highlight">財務總覽</span></h1>'+
       '<p>每筆收支獨立保存，家庭與公司分開統計，同時掌握本月財務概況。</p></div>'+periodPicker()+'</div>'+
@@ -325,6 +327,17 @@
       '<span>家庭結餘 <b>'+money(Number(f.income)-Number(f.expense))+'</b></span>'+
       '<span>公司結餘 <b>'+money(Number(b.income)-Number(b.expense))+'</b></span></div>'+
       getCharts()+
+      '<section class="wff-panel wff-today-panel"><div class="wff-panel-head"><h2>今日記帳</h2>'+
+      '<span class="wff-pill">'+e(today.date)+' · '+e(today.total)+' 筆</span></div>'+
+      '<div class="wff-today-stats"><span>今日收入 <b>'+money(today.totals?.income||0)+'</b></span>'+
+      '<span>今日支出 <b>'+money(today.totals?.expense||0)+'</b></span>'+
+      '<span>今日總筆數 <b>'+e(today.total)+' 筆</b></span></div>'+
+      (today.items?.length?'<div class="wff-today-list">'+today.items.map(x=>
+          '<div class="wff-today-item"><div><b>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</b>'+
+          '<small>'+e(scopeName(x.scope))+' · '+e(x.note||'無備註')+'</small></div>'+
+          '<strong>'+money(x.amount)+'</strong></div>').join('')+'</div>':
+          empty('今天還沒有記帳，按「新增記帳」即可建立第一筆'))+
+      (today.total>20?'<p class="wff-small">今日顯示最新 20 筆。</p>':'')+'</section>'+
       '<div class="wff-two"><section class="wff-panel"><div class="wff-panel-head"><h2>家庭每日花費明細</h2><span class="wff-pill">DAILY</span></div>'+
       (d.daily?.length?'<div class="wff-tablewrap"><table><thead><tr><th>日期</th><th>餐飲</th><th>其他</th><th>總計</th></tr></thead><tbody>'+
         d.daily.slice(0,12).map(x=>'<tr><td>'+e(x.occurred_on.slice(5))+'</td><td>'+money(x.food)+'</td><td>'+money(x.other)+'</td><td><b>'+money(x.total)+'</b></td></tr>').join('')+'</tbody></table></div>':
@@ -564,6 +577,14 @@
         S.activities.map(x=>'<tr><td>'+e(x.created_at)+'</td><td>'+e(x.display_name)+'</td><td>'+e(x.action)+'</td><td>'+e(x.object_id)+'</td></tr>').join('')+
         '</tbody></table></div>':empty('還沒有操作紀錄'))+'</section>';
   }
+  const dateLabel = value => {
+    const match=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return match ? match[1]+'年'+Number(match[2])+'月'+Number(match[3])+'日' : '選擇日期';
+  };
+  const dateControl = (name,value) =>
+    '<span class="wff-date-control"><span class="wff-date-label" aria-hidden="true">'+
+    e(dateLabel(value))+'</span><span class="wff-date-symbol" aria-hidden="true">▦</span>'+
+    '<input type="date" name="'+e(name)+'" value="'+e(value)+'" required></span>';
   const field = (label,control) => '<label class="wff-field"><span class="wff-field-title">'+e(label)+'</span>'+control+'</label>';
   function options(items,value,blank='請選擇') {
     return '<option value="">'+e(blank)+'</option>'+items.map(x=>'<option value="'+e(x.id)+'" '+(String(value||'')===String(x.id)?'selected':'')+'>'+e(x.name)+'</option>').join('');
@@ -630,14 +651,14 @@
         field('帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+
         field('類型','<select name="kind">'+selectValues([['expense','支出'],['income','收入'],['transfer','轉帳／信用卡還款']],d.kind||'expense')+'</select>')+'</div>'+
         '<div class="wff-form-grid">'+
-        field('日期','<input name="occurred_on" type="date" required value="'+e(d.occurred_on||new Date().toLocaleDateString('sv-SE'))+'">')+
+        field('日期',dateControl('occurred_on',d.occurred_on||new Date().toLocaleDateString('sv-SE')))+
         field('金額（NT$）','<input name="amount" type="number" step=".01" min=".01" required inputmode="decimal" value="'+e(d.amount||'')+'" placeholder="0">')+'</div>'+
-        field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例如：晚餐、主機年費">')+
         '<div data-transaction-method'+(d.kind==='transfer'?' hidden':'')+'>'+
           field('付款方式','<select name="payment_method">'+selectValues([
           ['cash','現金'],['card','信用卡'],['mobile','行動支付'],['bank','銀行帳戶'],['other','其他']],d.payment_method||'cash')+'</select>')+
         '</div>'+
         '<div id="wff-transaction-dynamic">'+transactionFields(d)+'</div>'+
+        field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例如：晚餐、主機年費">')+
         '<div class="wff-receipt-field"><span class="wff-receipt-heading">收據照片（選填）</span>'+
         '<label class="wff-receipt-pick">📷 拍照或選取圖片<input type="file" name="receipt" accept="image/jpeg,image/png,image/webp" class="wff-receipt-input"></label>'+
         '<div class="wff-receipt-preview" aria-live="polite"></div>'+
@@ -652,7 +673,7 @@
        field('名稱','<input name="name" value="'+e(d.name||'')+'" maxlength="120" placeholder="例如：CX-5 車貸、房貸、信貸" required>')+
        '<div class="wff-form-grid">'+
        field('每月預計金額（選填）','<input name="monthly_payment" type="number" step=".01" min="0" value="'+e(Number(d.monthly_payment)||'')+'" placeholder="不確定可先留白">')+
-       field('每月固定繳款日','<input name="first_due_on" type="date" required value="'+e(d.first_due_on||new Date().toLocaleDateString('sv-SE'))+'">')+'</div>'+
+       field('每月固定繳款日',dateControl('first_due_on',d.first_due_on||new Date().toLocaleDateString('sv-SE')))+'</div>'+
        '<div class="wff-form-grid">'+
        field('所屬帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+
        field('銀行／貸款機構（選填）','<input name="lender" value="'+e(d.lender||'')+'" maxlength="120" placeholder="例如：玉山銀行">')+'</div>'+
@@ -670,7 +691,7 @@
        '，確認扣款後再標記已繳。這裡不會另外新增一筆收支。</div>'+
        '<input type="hidden" name="installment_no" value="'+e(d.installment_no)+'">'+
        '<div class="wff-form-grid">'+
-       field('實際繳款日期','<input name="paid_on" type="date" required value="'+e(entry?.paid_on||new Date().toLocaleDateString('sv-SE'))+'">')+
+       field('實際繳款日期',dateControl('paid_on',entry?.paid_on||new Date().toLocaleDateString('sv-SE')))+
        field('實際繳款金額'+(simple?'（選填）':''),
          '<input name="paid_amount" type="number" min="'+(simple?'0':'.01')+'" step=".01" '+(simple?'':'required')+
          ' value="'+e(entry?.paid_on?entry.paid_amount:(Number(entry?.scheduled_amount)||''))+'" placeholder="可先不填">')+'</div>'+
@@ -967,6 +988,10 @@
       }
     }
     const t=ev.target;
+    if(t.matches('.wff-date-control input[type="date"]')){
+      const label=t.closest('.wff-date-control')?.querySelector('.wff-date-label');
+      if(label)label.textContent=dateLabel(t.value);
+    }
     if(t.id==='wff-household') { S.hid=Number(t.value);S.page=1;sessionStorage.setItem('wff_household',S.hid);attempt(reload); }
     if(t.id==='wff-month') { S.month=t.value;S.page=1;attempt(reload); }
     if(t.id==='wff-scope'){S.scope=t.value;S.page=1;attempt(reload);}
