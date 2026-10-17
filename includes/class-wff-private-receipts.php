@@ -48,8 +48,40 @@ final class WFF_Private_Receipts {
             return self::issue('無法驗證 WordPress 與網站公開根目錄，請設定私人收據目錄並檢查伺服器 DOCUMENT_ROOT。');
         }
         $explicit = defined('WFF_PRIVATE_RECEIPTS_DIR') && WFF_PRIVATE_RECEIPTS_DIR;
-        $raw = $explicit ? WFF_PRIVATE_RECEIPTS_DIR :
-            dirname($app) . '/.wff-receipts-' . substr(hash('sha256', $app), 0, 16);
+        $legacy = self::normalized(dirname($app) . '/.wff-receipts-' . substr(hash('sha256', $app), 0, 16));
+        $forbidden = array($app, $doc, $content);
+        $uploads = wp_upload_dir(null, false);
+        if (!empty($uploads['basedir'])) {
+            $uploads_dir = realpath($uploads['basedir']);
+            if ($uploads_dir) { $forbidden[] = $uploads_dir; }
+        }
+        if ($explicit) {
+            $raw = WFF_PRIVATE_RECEIPTS_DIR;
+        } elseif (is_dir($legacy)) {
+            // Prefer pre-existing v1.2.9 private files to avoid losing receipts.
+            $raw = $legacy;
+        } else {
+            // Walk upward past WordPress and DOCUMENT_ROOT, e.g. xCloud's
+            // sites/domain/public directory. Never guess inside uploads.
+            $parent = dirname($app);
+            $raw = null;
+            for ($i = 0; $i < 9; $i++) {
+                $root = realpath($parent);
+                if (!$root || $root === '/' || $root === '.') { break; }
+                $blocked = false;
+                foreach ($forbidden as $forbidden_root) {
+                    if (self::inside($root, $forbidden_root)) { $blocked = true; break; }
+                }
+                if (!$blocked && is_writable($root)) {
+                    $raw = $root . '/.wff-receipts-' . substr(hash('sha256', $app), 0, 16);
+                    break;
+                }
+                $parent = dirname($root);
+            }
+            if (!$raw) {
+                return self::issue('找不到可寫入的網站根目錄外私人資料夾，為安全起見未將收據放進公開媒體庫。可由主機管理員建立站外私人目錄。');
+            }
+        }
         if (!is_string($raw) || strpos($raw, '://') !== false ||
             !preg_match('~^(?:/|[A-Za-z]:[\\\\/])~', $raw)) {
             return self::issue('收據目錄必須是主機上的絕對實體路徑，不可使用公開網址或相對路徑。');
@@ -63,16 +95,10 @@ final class WFF_Private_Receipts {
         if (!$parent || is_link($path) || !$path || $path === '/') {
             return self::issue('私人收據目錄的上層路徑不存在，或目標是不安全的符號連結。');
         }
-        $forbidden = array($app, $doc, $content);
-        $uploads = wp_upload_dir(null, false);
-        if (!empty($uploads['basedir'])) {
-            $uploads_dir = realpath($uploads['basedir']);
-            if ($uploads_dir) { $forbidden[] = $uploads_dir; }
-        }
         $candidate = self::normalized($parent . '/' . basename($path));
         foreach ($forbidden as $root) {
             if (self::inside($candidate, $root)) {
-                return self::issue('收據儲存目錄位於網站公開區域或 WordPress 目錄內，已拒絕上傳。請在 wp-config.php 設定安全的 WFF_PRIVATE_RECEIPTS_DIR。');
+                return self::issue('收據儲存目錄位於網站公開區域，已拒絕上傳。請設定公開根目錄外的私人收據目錄。');
             }
         }
         if (!is_dir($candidate)) {
@@ -246,6 +272,11 @@ final class WFF_Private_Receipts {
             if ($old && !empty($old['stored_name']) && $old['stored_name'] !== $stored['stored_name']) {
                 self::erase_file($old['stored_name']);
             }
+            $current = self::row($hid, $transaction);
+            if ($current && !WFF_Receipt_Media::ensure((int)$current['id'])) {
+                update_option('wff_receipts_last_migration_error',
+                    '收據照片已安全保存，但無法建立 WordPress 媒體庫索引，請檢查 WordPress 附件權限', false);
+            }
             return array('saved'=>true, 'transaction_id'=>$transaction);
         } finally {
             self::unlock($lock);
@@ -281,13 +312,15 @@ final class WFF_Private_Receipts {
                 self::erase_file($stored['stored_name']);
                 return self::issue('舊收據搬移後更新資料庫失敗，原始 Base64 已保留');
             }
+            WFF_Receipt_Media::ensure((int)$row['id']);
             return true;
         } finally {
             self::unlock($lock);
         }
     }
 
-    public static function fetch($hid, $transaction) {
+    /** Called only after family membership has been verified by the caller. */
+    public static function bytes($hid, $transaction) {
         $row = self::row($hid, $transaction);
         if (!$row) {
             return new WP_Error('wff_receipt_missing', '尚未附加收據', array('status'=>404));
@@ -304,18 +337,25 @@ final class WFF_Private_Receipts {
             if ($bytes === false || !hash_equals((string)$row['sha256'],hash('sha256',$bytes))) {
                 return self::issue('收據檔案完整性驗證失敗，請聯絡管理員');
             }
-            $base64 = base64_encode($bytes);
         } elseif (!empty($row['image_base64'])) {
-            // Safe legacy fallback if file migration has not completed or
-            // host storage is not configured; still household-authenticated.
-            $base64 = $row['image_base64'];
+            $bytes = base64_decode($row['image_base64'], true);
+            if ($bytes === false) { return self::issue('舊版收據資料無法解碼'); }
         } else {
             return self::issue('收據索引存在但圖片內容遺失，請聯絡管理員');
         }
+        if (is_wp_error(self::validate_bytes($bytes, $row['mime']))) {
+            return self::issue('收據圖片已損毀或內容格式與記錄不符');
+        }
+        return array('mime'=>$row['mime'],'bytes'=>$bytes,'name'=>$row['filename']);
+    }
+
+    public static function fetch($hid, $transaction) {
+        $image = self::bytes($hid, $transaction);
+        if (is_wp_error($image)) { return $image; }
         $response = new WP_REST_Response(array(
-            'mime'=>$row['mime'],
-            'name'=>$row['filename'],
-            'data_url'=>'data:'.$row['mime'].';base64,'.$base64
+            'mime'=>$image['mime'],
+            'name'=>$image['name'],
+            'data_url'=>'data:'.$image['mime'].';base64,'.base64_encode($image['bytes'])
         ), 200);
         $response->header('Cache-Control', 'private, no-store, max-age=0');
         $response->header('Pragma', 'no-cache');
@@ -323,7 +363,7 @@ final class WFF_Private_Receipts {
         return $response;
     }
 
-    public static function remove($hid, $transaction) {
+    public static function remove($hid, $transaction, $delete_attachment = true) {
         global $wpdb;
         $lock = self::lock($transaction);
         if (is_wp_error($lock)) { return $lock; }
@@ -335,6 +375,9 @@ final class WFF_Private_Receipts {
             if ($deleted === false) { return self::issue('刪除收據索引失敗'); }
             if (!empty($old['stored_name']) && !self::erase_file($old['stored_name'])) {
                 update_option('wff_receipts_last_migration_error', '已刪除收據索引，但磁碟檔案清理失敗：請檢查私人目錄權限', false);
+            }
+            if ($delete_attachment && !empty($old['attachment_id'])) {
+                wp_delete_attachment((int)$old['attachment_id'], true);
             }
             return array('deleted'=>(bool)$deleted);
         } finally {
@@ -360,6 +403,15 @@ final class WFF_Private_Receipts {
             "SELECT id FROM $t WHERE stored_name=%s AND LENGTH(image_base64)>0 ORDER BY id ASC LIMIT %d",
             '', self::BATCH_SIZE
         ));
+        // Older v1.2.9 file receipts may have no Media Library attachment.
+        $file_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM $t WHERE stored_name<>%s AND attachment_id=0 ORDER BY id ASC LIMIT %d",
+            '', self::BATCH_SIZE
+        ));
+        foreach ($file_ids as $file_id) {
+            WFF_Receipt_Media::ensure((int)$file_id);
+        }
+
         $last_error = '';
         foreach ($ids as $id) {
             $result = self::migrate_one((int)$id);
