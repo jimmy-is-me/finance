@@ -1,6 +1,6 @@
 # WUMETAX Finance｜家庭財務管理
 
-繁體中文 WordPress 家庭財務 Web App，預設採 **Minimalist Monochrome（黑白極簡）** 視覺設計。無第三方訂閱服務，財務紀錄儲存在自行架設的 WordPress 資料庫。
+繁體中文 WordPress 家庭財務 Web App，預設採 **Minimalist Monochrome（黑白極簡）** 視覺設計。無第三方訂閱服務，交易及設定儲存在 WordPress 資料庫，收據圖片存放於網站公開根目錄外的主機私人目錄。
 
 ## 特色
 
@@ -11,6 +11,22 @@
 - **分析**：月度統計、支出分類、六個月走勢、近期交易
 - **資料**：CSV 匯入／匯出（含 Google Sheet A–M 欄位版面匯入支援），所有財務資料僅存在 WordPress
 - **介面**：手機優先 RWD、黑白單色系、襯線字體、清晰線條、零陰影、桌面側邊欄與手機底部導覽、免付費 SaaS 訂閱
+
+## v1.2.9 安全收據檔案（資料庫不再儲存圖片）
+
+- 新收據存於實際**網站公開根目錄之外**的私人主機目錄；資料庫只記錄隨機檔名、SHA-256、檔案長度、MIME 與相關資訊
+- PHP 會驗證私人路徑不在 WordPress 根目錄、實際伺服器 DOCUMENT_ROOT、wp-content、uploads 內，不依賴 Apache .htaccess（Nginx 不會讀取 .htaccess）
+- 檔案以 48 位十六進位隨機名稱、0600 權限寫入，資料不提供直接圖片公開 URL；查看經 WordPress 家庭成員 API 授權，上傳／刪除需家庭編輯權限
+- **安全失敗**：找不到能驗證的私人儲存路徑，就拒絕新圖片上傳，不會將照片放進公開目錄。舊版資料庫收據仍可經登入授權查看
+- **主機特殊路徑**：在 wp-config.php 的結束註解前加入下列設定，改為主機上真正位於所有 Nginx／Apache 虛擬主機公開根目錄及 Alias 之外的路徑
+
+    define('WFF_PRIVATE_RECEIPTS_DIR', '/home/example/private/finance-receipts');
+
+- 若此路徑不存在，請先由主機管理員建立父目錄並確認 PHP 有寫入權限。不要選 public_html、htdocs、www 或任何 WP uploads 內的路徑。預設會嘗試使用 WordPress 安裝根目錄上一層的私人資料夾
+- **舊照片安全搬遷**：排程每小時搬移最多 3 張，也能在 WordPress 後台「家庭財務 → 網站與登入設定」手動搬移。確認檔案寫入及 SHA-256 驗證後，才把舊 Base64 清空；失敗不會刪除原照片，後台會顯示錯誤
+- **備份必須同時包含資料庫與私人收據目錄**：只備份 SQL 不會備份新照片。換主機／更改目錄時請同步搬移檔案和更新設定
+- 以前 MySQL 實體檔案大小不一定因清空 Base64 立即減少。請等待待搬移數歸零、備份驗證完成後，再由主機管理員評估資料表空間整理；不要直接刪除舊欄位或無備份操作資料庫
+- 請排除 Finance REST API 的 Cloudflare／主機快取，避免私人收據資料被快取。若同一台主機還有其他網站映射到此目錄，務必自行確認路徑沒有被 Nginx alias / Apache Alias 對外公開
 
 ## v1.2.8 收據照片與 iPhone 日期欄位
 
@@ -143,6 +159,8 @@ WordPress 6.2+、PHP 7.4+、MySQL / MariaDB（InnoDB）、原生 JavaScript、CS
 - `assets/css/admin.css`：後台管理介面
 
 ## 版本
+
+v1.2.9 — 收據移至網站公開根目錄外的私有資料夾；新資料庫只保留檔案索引，舊 Base64 每批三張安全搬移，後台可檢視進度。
 
 v1.2.4 — 分類可拖曳與按鈕排序，排序永久保存於資料庫並同步記帳下拉選單；新增 Finance SVG 瀏覽器圖示。
 
