@@ -151,7 +151,7 @@ final class WFF_Private_Receipts {
         if (!$basedir || !is_dir($basedir)) {
             return self::issue('無法找到 WordPress 媒體目錄，收據沒有安全的檔案儲存空間。');
         }
-        $dir = $basedir . '/.wff-encrypted-' . substr(hash('sha256', realpath(ABSPATH)), 0, 16);
+        $dir = $basedir . '/.wff-encrypted-finance';
         if (is_link($dir) || (!is_dir($dir) && !wp_mkdir_p($dir))) {
             return self::issue('無法建立 Finance 加密收據目錄，請檢查主機磁碟權限。');
         }
@@ -178,7 +178,7 @@ final class WFF_Private_Receipts {
             // saved ciphertext permanently unreadable. Fail closed.
             $upload = wp_upload_dir(null, false);
             $base = !empty($upload['basedir']) ? realpath($upload['basedir']) : false;
-            $dir = $base ? $base . '/.wff-encrypted-' . substr(hash('sha256', realpath(ABSPATH)), 0, 16) : '';
+            $dir = $base ? $base . '/.wff-encrypted-finance' : '';
             if ($dir && glob($dir . '/*.enc')) {
                 return self::issue('找不到加密金鑰，但加密收據仍存在；請還原原本的 WordPress 資料庫備份，切勿產生新金鑰。');
             }
