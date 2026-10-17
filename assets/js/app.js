@@ -666,6 +666,7 @@
         (d.id&&Number(d.has_receipt)?'<button type="button" class="wff-textbtn" data-action="view-receipt" data-id="'+e(d.id)+'">查看已存收據</button>'+
         '<button type="button" class="wff-textbtn" data-action="remove-receipt" data-id="'+e(d.id)+'">刪除已存收據</button>':'')+
         '<p class="wff-small">手機照片會自動轉成 WebP 儲存，轉檔後需小於 5 MB。收據存放於主機私人目錄，需家庭權限才能檢視。</p></div>'+
+        '<div class="wff-save-error" role="alert" aria-live="assertive"></div>'+
         '<button class="wff-button wff-primary" type="submit">儲存記帳 ✓</button></form>';
     } else if(type==='loan'){
       title=d.id?'編輯每月繳款':'新增每月繳款';
@@ -1128,7 +1129,25 @@
         } catch(err) { S.authError=err.message;render(); }
       });
     }
-    if(form.id==='wff-transaction-form'){attempt(()=>submitTransaction(getFormData(form),form));}
+    if(form.id==='wff-transaction-form'){
+      if(S.busy)return;
+      S.busy=true;
+      const button=form.querySelector('[type="submit"]');
+      const errorArea=form.querySelector('.wff-save-error');
+      if(button){button.disabled=true;button.textContent='正在儲存記帳…';}
+      if(errorArea)errorArea.textContent='';
+      submitTransaction(getFormData(form),form).catch(error=>{
+        // Do not rebuild the entire modal on mobile validation/network errors;
+        // preserve already-entered values, picker focus and scroll position.
+        if(errorArea){
+          errorArea.textContent=error.message||'儲存失敗，請檢查輸入資料';
+          errorArea.scrollIntoView({block:'nearest'});
+        }
+      }).finally(()=>{
+        S.busy=false;
+        if(button){button.disabled=false;button.textContent='儲存記帳 ✓';}
+      });
+    }
     if(form.id==='wff-loan-form'){
       attempt(async()=>{
         const id=S.draft.id;
