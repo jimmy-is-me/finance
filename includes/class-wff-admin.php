@@ -15,6 +15,7 @@ final class WFF_Admin {
         add_action('admin_menu', array(__CLASS__, 'menu'));
         add_action('admin_post_wff_settings_save', array(__CLASS__, 'save_settings'));
         add_action('admin_post_wff_household_limit', array(__CLASS__, 'save_household_limit'));
+        add_action('admin_post_wff_receipts_migrate', array(__CLASS__, 'manual_migrate_receipts'));
         add_action('admin_enqueue_scripts', array(__CLASS__, 'enqueue'));
         add_action('admin_notices', array(__CLASS__, 'notices'));
         add_filter('plugin_action_links_' . plugin_basename(WFF_PATH . 'wumetax-finance.php'), array(__CLASS__, 'action_links'));
@@ -131,13 +132,39 @@ final class WFF_Admin {
             . '<p class="description">系統透過 WordPress 寄送設定密碼的郵件，首次登入後可建立自己的家庭空間；不需要付款或訂閱。</p></td></tr>';
         echo '</tbody></table><h2>家庭與資料</h2><p>家庭及公司收支對同一家庭所有成員共用，成員的查看／編輯權限由家庭擁有者在前台管理。'
             . '登入後可以建立自己的家庭，或透過邀請加入其他家庭。管理員可在此開啟或關閉免費自助註冊。</p>'
-            . '<p>所有資訊皆保存在這個 WordPress 的專屬資料表，不會送往第三方訂閱或金流服務。</p>';
+            . '<p>交易及設定儲存在 WordPress 資料庫；收據圖片則儲存在網站公開根目錄外的主機私人目錄，不透過公開媒體庫網址提供。</p>';
         submit_button('儲存設定');
         echo '</form><div class="wff-admin-panel"><h2>環境與安全</h2>'
             . '<p>REST API：<code>' . esc_html(rest_url('wff/v1/')) . '</code></p>'
             . '<p>在 Cloudflare、LiteSpeed Cache、WP Rocket 等快取工具中，請排除首頁（首頁模式開啟時）、指定 Finance 頁面與 Finance REST API，並避免快取登入後的私人資料。</p>'
             . '<p>停用或更新外掛不會清除任何家庭、成員或收支紀錄。如要移轉主機，請備份 WordPress 資料庫。</p></div>';
+        $receipt_state = WFF_Private_Receipts::status();
+        echo '<div class="wff-admin-panel"><h2>收據圖片私人儲存</h2>'
+            . '<p><strong>' . ($receipt_state['available'] ? '私人目錄正常' : '收據上傳已安全停用') . '</strong>：'
+            . esc_html($receipt_state['message']) . '</p>'
+            . ($receipt_state['available'] ? '<p>伺服器私人路徑：<code>'
+                . esc_html($receipt_state['directory']) . '</code></p>' : '')
+            . '<p>等待搬移的舊版資料庫收據：<strong>' . (int)$receipt_state['pending'] . '</strong> 張</p>'
+            . ($receipt_state['last_error'] ? '<p>上次搬移提示：' . esc_html($receipt_state['last_error']) . '</p>' : '')
+            . '<p>自動背景程序每批最多處理 3 張，只有在檔案寫入及驗證成功後才清空資料庫的舊圖片內容。</p>'
+            . '<p>若主機目錄結構特殊，請在 <code>wp-config.php</code> 中設定：'
+            . '<code>define(&#39;WFF_PRIVATE_RECEIPTS_DIR&#39;, &#39;/home/account/private/finance-receipts&#39;);</code>'
+            . '請務必確保此路徑不在任何 Nginx／Apache 虛擬主機的公開根目錄下。</p>'
+            . '<p>備份請同時包含 WordPress 資料庫及此私人圖片目錄；只有備份資料庫將無法還原新收據。</p>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . '<input type="hidden" name="action" value="wff_receipts_migrate">';
+        wp_nonce_field('wff_receipts_migrate');
+        submit_button('手動搬移下一批（最多 3 張）', 'secondary', 'submit', false);
+        echo '</form></div>';
         self::finish();
+    }
+
+    public static function manual_migrate_receipts() {
+        self::allow();
+        check_admin_referer('wff_receipts_migrate');
+        WFF_Private_Receipts::migrate_batch();
+        wp_safe_redirect(admin_url('admin.php?page=wff-settings'));
+        exit;
     }
 
     public static function save_settings() {
