@@ -27,8 +27,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.3.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.3.0'\)/);
+test('v1.3.1 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.3.1'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -316,7 +316,7 @@ test('v1.2.9 private receipts enforce family authorization and no public media U
  assert.match(api,/SELECT id FROM \$t WHERE household_id=%d AND id=%d/);
  assert.match(api,/AS has_receipt/);
  assert.match(store,/getimagesizefromstring/);
- assert.match(store,/3145728/);
+ assert.match(store,/5242880/);
  assert.match(store,/bin2hex\(random_bytes\(24\)\)/);
  assert.match(store,/fopen\(\$path, 'x\+b'\)/);
  assert.match(store,/wp_mkdir_p/);
@@ -339,7 +339,7 @@ test('old database receipts migrate one batch at a time and only clear after wri
  assert.match(admin,/WFF_Private_Receipts::status/);
 });
 test('v1.2.8 photos are attached after saving the transaction',()=>{
- assert.match(js,/name="receipt" accept="image\/jpeg,image\/png,image\/webp"/);
+ assert.match(js,/name="receipt" accept="image\/\*"/);
  assert.match(js,/async function submitTransaction\(data,form\)/);
  assert.match(js,/multi.append\('receipt',photo,photo.name\)/);
  assert.match(js,/data-action="view-receipt"/);
@@ -375,4 +375,43 @@ test('1.3.0 discovers writable parent outside roots, never public uploads',()=>{
  assert.match(privateStore,/self::inside\(\$candidate, \$root\)/);
  assert.match(privateStore,/WFF_PRIVATE_RECEIPTS_DIR/);
  assert.doesNotMatch(privateStore,/wp_handle_upload/);
+});
+
+
+test('1.3.1 iPhone date controls are stable and use no zoom disabling',()=>{
+ const template=readFileSync('templates/app.php','utf8');
+ assert.match(js,/const dateControl = \(name,value\)/);
+ assert.match(js,/const dateLabel = value/);
+ assert.match(js,/dateControl\('occurred_on'/);
+ assert.match(js,/dateControl\('first_due_on'/);
+ assert.match(js,/dateControl\('paid_on'/);
+ assert.match(css,/\.wff-date-control/);
+ assert.match(css,/\.wff-date-label/);
+ assert.match(css,/\.wff-modal-head\{[\s\S]*position:sticky/);
+ assert.match(css,/font-size:16px!important/);
+ assert.match(template,/width=device-width,initial-scale=1,viewport-fit=cover/);
+ assert.doesNotMatch(template,/user-scalable=no|maximum-scale=1/);
+});
+test('1.3.1 camera receipts are WebP <=5MB before upload',()=>{
+ const storage=readFileSync('includes/class-wff-private-receipts.php','utf8');
+ assert.match(storage,/const MAX_BYTES = 5242880/);
+ assert.match(js,/const receiptMaxBytes = 5 \* 1024 \* 1024/);
+ assert.match(js,/async function compressReceipt\(file\)/);
+ assert.match(js,/canvas\.toBlob\(resolve,'image\/webp',quality\)/);
+ assert.match(js,/compressed\.size\/1024\/1024/);
+ assert.match(js,/await S\.receiptProcessing/);
+ assert.match(js,/if\(!res\.ok\)throw new Error/);
+ assert.match(js,/resetModal\(\);\s*await reload\(\)/);
+});
+test('1.3.1 category is above note and dashboard shows today's records independently',()=>{
+ const api=readFileSync('includes/class-wff-api.php','utf8');
+ const formStart=js.indexOf("if(type==='transaction'){");
+ const formEnd=js.indexOf("} else if(type==='loan'){",formStart);
+ const form=js.slice(formStart,formEnd);
+ assert.ok(form.indexOf("transactionFields(d)")<form.indexOf("field('備註'"));
+ assert.match(api,/self::entries\(\$hid, array\('date'=>\$today\), 20, 0\)/);
+ assert.match(api,/wp_date\('Y-m-d'\)/);
+ assert.match(api,/'today'=>array\(/);
+ assert.match(js,/今日記帳/);
+ assert.match(js,/const today=d\.today/);
 });
