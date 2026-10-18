@@ -5,7 +5,7 @@
   const config = window.WFF_CONFIG;
   if (!root || !config) return;
   const views = [
-    ['dashboard','總覽','▦'],['transactions','收支紀錄','↔'],['loans','貸款紀錄','▤'],
+    ['dashboard','總覽','▦'],['transactions','收支紀錄','↔'],['loans','貸款紀錄','▤'],['subscriptions','訂閱管理','◴'],
     ['accounts','付款工具','▣'],['categories','分類管理','▤'],
     ['members','家庭成員','♧'],['import','資料匯入／匯出','⇅'],
     ['activity','操作紀錄','◷']
@@ -13,7 +13,7 @@
   const S = {
     view: 'dashboard', accountTab:'all', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
     scope: 'all', kind: 'all', page: 1, households: [], hid: 0, meta: null,
-    dashboard: null, transactions: null, loans: null, loanExpanded: {}, loanScope:'all', loanWindowOffset:0, activities: [], modal: null,
+    dashboard: null, transactions: null, subscriptions: null, loans: null, loanExpanded: {}, loanScope:'all', loanWindowOffset:0, activities: [], modal: null,
     draft: {}, busy: false, nav: false, notice: '', authError: '', loginDraft: '', invitationError: '', csv: '', csvName: '',
     importYear: new Date().getFullYear(), importPreview: null, invitation: null,
   };
@@ -71,6 +71,7 @@
     const [meta,dashboard,transactions] = await Promise.all(jobs);
     S.meta=meta; S.dashboard=dashboard; S.transactions=transactions;
     if (S.view === 'activity') S.activities=await request(path('activity'));
+    if (S.view === 'subscriptions') S.subscriptions=await request(path('subscriptions'));
     if (S.view === 'loans') S.loans=await request(path('loans?offset='+S.loanWindowOffset));
     render();
   }
@@ -333,7 +334,7 @@
       '<span>今日總筆數 <b>'+e(today.total)+' 筆</b></span></div>'+
       (today.items?.length?'<div class="wff-today-list">'+today.items.map(x=>
           '<div class="wff-today-item"><div><b>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</b>'+
-          '<small>'+e(scopeName(x.scope))+' · '+e(x.note||'無備註')+'</small></div>'+
+          '<small>'+e(scopeName(x.scope))+' · '+e(x.note||'無備註')+(x.payment_status==='unpaid'?' · 未繳費':'')+'</small></div>'+
           '<strong>'+money(x.amount)+'</strong></div>').join('')+'</div>':
           empty('今天還沒有記帳，按「新增記帳」即可建立第一筆'))+
       (today.total>20?'<p class="wff-small">今日顯示最新 20 筆。</p>':'')+'</section>'+
@@ -345,7 +346,7 @@
       '<section class="wff-panel"><div class="wff-panel-head"><h2>最近交易</h2><button class="wff-textbtn" data-view="transactions">查看全部 →</button></div>'+
       (latest.length?'<div class="wff-recent">'+latest.map(x=>'<div class="wff-recent-row"><div class="wff-recent-icon '+(x.kind==='income'?'income':'expense')+'">'+
         (x.kind==='income'?'↗':x.kind==='transfer'?'↔':'↙')+'</div><div><b>'+e(x.category_name||readable(x.kind))+'</b>'+
-        '<small>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'　'+e(x.occurred_on)+' · '+scopeName(x.scope)+' · '+e(x.note||'無備註')+'</small></div>'+
+        '<small>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'　'+e(x.occurred_on)+' · '+scopeName(x.scope)+' · '+e(x.note||'無備註')+(x.payment_status==='unpaid'?' · 未繳費':'')+'</small></div>'+
         '<strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></div>').join('')+'</div>':
         empty('尚無交易紀錄'))+'</section></div>'+
       (cardList.length?'<section class="wff-panel"><div class="wff-panel-head"><h2>信用卡未清償淨額（估算）</h2>'+
@@ -357,6 +358,15 @@
   function empty(message) { return '<div class="wff-empty">✳<p>'+e(message)+'</p></div>'; }
   function loanStatusText(status) {
     return ({paid:'已繳',partial:'部分繳款',overdue:'已逾期',upcoming:'待繳'})[status]||status;
+  }
+  function subscriptions() {
+    const items=S.subscriptions?.items||[];
+    return '<section class="wff-panel"><h2>訂閱管理</h2><p>到期自動建立未繳費收支，家庭管理員確認已繳後才計入實際支出。到期不代表已自動扣款。</p>'+
+      (canEdit()?simpleBtn('＋ 新增訂閱','new-subscription','wff-primary'):'')+
+      '<p class="wff-small">支援每日、每週、每月及每年週期；月底依當月最後一天。停用後停止產生新一期，已產生紀錄保留。無網站流量時，排程可能延後，下次開啟收支頁會補登。</p>'+
+      (items.length?'<div class="wff-tablewrap"><table><thead><tr><th>訂閱項目</th><th>金額</th><th>週期</th><th>下次到期</th><th>狀態</th><th>操作</th></tr></thead><tbody>'+items.map(x=>{
+        const c=x.settings;return '<tr><td>'+e(c.name)+'<small>'+scopeName(c.scope)+'</small></td><td>'+money(c.amount)+'</td><td>每 '+e(c.interval)+' '+({day:'日',week:'週',month:'月',year:'年'})[c.unit]+'</td><td>'+e(c.end_on&&x.next_due>c.end_on?'已結束':x.next_due)+'</td><td>'+ (Number(x.active)?'啟用':'已停用')+'</td><td>'+(canEdit()?'<button class="wff-textbtn" data-action="edit-subscription" data-id="'+e(x.id)+'">編輯</button>':'—')+'</td></tr>';
+      }).join('')+'</tbody></table></div>':empty('尚未建立訂閱'))+'</section>';
   }
   function loans() {
     const data=S.loans||{items:[],today:new Date().toLocaleDateString('sv-SE')};
@@ -454,13 +464,14 @@
       (canEdit()?simpleBtn('＋ 新增一筆','new-transaction','wff-primary'):'')+'</div>'+
       '<div class="wff-list-count">共 '+e(d.total)+' 筆 · 每頁最多 25 筆</div>'+
       (d.items.length?'<div class="wff-tablewrap"><table class="wff-transactions"><thead><tr>'+
-        '<th>日期</th><th>類型</th><th>分類／備註</th><th>帳戶</th><th>記帳人</th><th>金額</th>'+(canEdit()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
-        d.items.map(x=>'<tr><td>'+e(x.occurred_on)+'</td><td><span class="wff-pill '+(x.kind==='income'?'mint':x.kind==='expense'?'pink':'violet')+'">'+scopeName(x.scope)+' · '+readable(x.kind)+'</span></td>'+
-          '<td>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'<small>'+e(x.note||'—')+'</small></td>'+
-          '<td>'+e(x.payment_channel_name ? x.payment_channel_name+' · '+(x.account_name||'扣款來源未指定') : (x.account_name||'—'))+(x.destination_account_name?' → '+e(x.destination_account_name):'')+'</td>'+
-          '<td>'+e(x.creator_name||'—')+'</td>'+
+        '<th>日期</th><th>分類</th><th>備註</th><th>金額</th><th>類型</th><th>記帳人／帳戶</th>'+(canEdit()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
+        d.items.map(x=>'<tr><td>'+e(x.occurred_on)+'</td>'+
+          '<td>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</td>'+
+          '<td>'+e(x.note||'—')+((x.subscription_id||x.payment_status==='unpaid')?'<small class="wff-payment-state">繳費狀態 · '+(x.payment_status==='paid'?'已繳費':'未繳費')+'</small>':'')+'</td>'+
           '<td><strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></td>'+
-          (canEdit()?'<td><button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
+          '<td><span class="wff-pill">'+scopeName(x.scope)+' · '+readable(x.kind)+'</span></td>'+
+          '<td>'+e(x.creator_name||'—')+'<small>'+e([x.payment_channel_name,x.account_name].filter(Boolean).join(' · ')||'—')+'</small></td>'+
+          (canEdit()?'<td>'+((x.subscription_id||x.payment_status==='unpaid')&&isOwner()?'<button type="button" class="wff-textbtn" data-action="subscription-paid" data-id="'+e(x.id)+'" data-paid="'+(x.payment_status==='paid'?'0':'1')+'">'+(x.payment_status==='paid'?'取消已繳':'標記已繳')+'</button>':'')+'<button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
             (Number(x.has_receipt)?'<button class="wff-iconbutton" type="button" aria-label="查看收據" data-action="view-receipt" data-id="'+e(x.id)+'">📷</button>':'')+
             '<button class="wff-iconbutton" aria-label="複製此記帳，建立新的一筆" title="複製記帳" data-action="duplicate-transaction" data-id="'+e(x.id)+'">⧉</button>'+ 
              '<button class="wff-iconbutton" aria-label="刪除" data-action="delete-transaction" data-id="'+e(x.id)+'">×</button></td>':'')+'</tr>').join('')+
@@ -611,6 +622,7 @@
       '<option value="'+e(c.id)+'" '+(String(d.category_id||'')===String(c.id)?'selected':'')+
       ' style="background-color:'+categoryColor(c.color)+'">'+e(c.name)+'</option>').join('')+'</select>';
     return (transfer?'<div class="wff-note">轉帳或信用卡還款不會重複計入收支。</div>':field('分類',categorySelect))+
+      '<div data-transaction-method'+(transfer?' hidden':'')+'>'+field('付款方式','<select name="payment_method">'+selectValues([['cash','現金'],['card','信用卡'],['mobile','行動支付'],['bank','銀行帳戶'],['other','其他']],method)+'</select>')+'</div>'+
       (method==='mobile'&&!transfer?field('使用的行動支付','<select name="payment_channel_id" required>'+
        options(wallets,d.payment_channel_id,'選擇 LINE Pay、Apple Pay 等')+'</select>'):'')+
       '<div class="wff-form-grid">'+field(transfer?'轉出帳戶':method==='mobile'?'實際扣款來源':'付款／收款工具',
@@ -623,6 +635,7 @@
   }
   function refreshTransactionFields(form,changed) {
     const data=getFormData(form);
+    if(form.id==='wff-subscription-form')data.kind='expense';
     if(changed==='scope'||changed==='kind')data.category_id='';
     if(changed==='payment_method'){data.payment_channel_id='';data.account_id='';}
     if(changed==='payment_channel_id'){
@@ -652,13 +665,9 @@
         field('類型','<select name="kind">'+selectValues([['expense','支出'],['income','收入'],['transfer','轉帳／信用卡還款']],d.kind||'expense')+'</select>')+'</div>'+
         '<div class="wff-form-grid">'+
         field('日期',dateControl('occurred_on',d.occurred_on||new Date().toLocaleDateString('sv-SE')))+
-        field('金額（NT$）','<input name="amount" type="number" step=".01" min=".01" required inputmode="decimal" value="'+e(d.amount||'')+'" placeholder="0">')+'</div>'+
-        '<div data-transaction-method'+(d.kind==='transfer'?' hidden':'')+'>'+
-          field('付款方式','<select name="payment_method">'+selectValues([
-          ['cash','現金'],['card','信用卡'],['mobile','行動支付'],['bank','銀行帳戶'],['other','其他']],d.payment_method||'cash')+'</select>')+
-        '</div>'+
-        '<div id="wff-transaction-dynamic">'+transactionFields(d)+'</div>'+
+        field('金額（NT$）','<input name="amount" type="number" step="1" min="1" required inputmode="numeric" value="'+e(d.amount||'')+'" placeholder="0">')+'</div>'+
         field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例如：晚餐、主機年費">')+
+        '<div id="wff-transaction-dynamic">'+transactionFields(d)+'</div>'+
         '<div class="wff-receipt-field"><span class="wff-receipt-heading">收據照片（選填）</span>'+
         '<label class="wff-receipt-pick">📷 拍照或選取圖片<input type="file" name="receipt" accept="image/*" class="wff-receipt-input"></label>'+
         '<div class="wff-receipt-preview" aria-live="polite"></div>'+
@@ -668,6 +677,21 @@
         '<p class="wff-small">手機照片會自動轉成 WebP 儲存，轉檔後需小於 5 MB。收據存放於主機私人目錄，需家庭權限才能檢視。</p></div>'+
         '<div class="wff-save-error" role="alert" aria-live="assertive"></div>'+
         '<button class="wff-button wff-primary" type="submit">儲存記帳 ✓</button></form>';
+    } else if(type==='subscription'){
+      title=d.id?'編輯訂閱':'新增訂閱';
+      body='<form id="wff-subscription-form" class="wff-form">'+
+       field('訂閱項目','<input name="name" maxlength="120" required value="'+e(d.name||'')+'" placeholder="例如：Netflix、網域、主機">')+
+       field('帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+
+       field('金額（NT$）','<input name="amount" type="number" step="1" min="1" required value="'+e(d.amount||'')+'">')+
+       field('首次到期日',dateControl('start_on',d.start_on||new Date().toLocaleDateString('sv-SE')))+
+       field('結束日期（選填）','<input type="date" name="end_on" value="'+e(d.end_on||'')+'">')+
+       '<div class="wff-form-grid">'+field('每隔','<input name="interval" type="number" min="1" max="120" required value="'+e(d.interval||1)+'">')+
+       field('週期','<select name="unit">'+selectValues([['day','日'],['week','週'],['month','月'],['year','年']],d.unit||'month')+'</select>')+'</div>'+
+       field('備註','<input name="note" maxlength="150" value="'+e(d.note||'')+'">')+
+       '<div id="wff-transaction-dynamic">'+transactionFields({...d,kind:'expense'})+'</div>'+
+       field('狀態','<select name="active">'+selectValues([['1','啟用'],['0','停止續記']],String(d.active??1))+'</select>')+
+       '<p class="wff-small">起日與週期建立後固定。費用、分類與付款方式只影響後續產生的紀錄；已產生收支請到收支紀錄編輯。選擇過去的起日將補登各期未繳費紀錄。</p>'+
+       '<button type="submit" class="wff-button wff-primary">儲存訂閱</button></form>';
     } else if(type==='loan'){
       title=d.id?'編輯每月繳款':'新增每月繳款';
       body='<form id="wff-loan-form" class="wff-form">'+
@@ -750,7 +774,7 @@
     if (S.invitation) { root.innerHTML=invitationView(); return; }
     if (!S.hid) { root.innerHTML=welcome(); return; }
     let content = ({
-      dashboard,transactions,loans,accounts,categories,members,import:importView,activity
+      dashboard,transactions,loans,subscriptions,accounts,categories,members,import:importView,activity
     })[S.view]();
     root.innerHTML=header()+content+footer()+modal();
     document.body.classList.toggle('wff-dialog-open',!!S.modal);
@@ -758,6 +782,7 @@
   async function go(view) {
     S.view=view;S.nav=false;S.modal=null;
     if(view==='activity') S.activities=await request(path('activity'));
+    if(view==='subscriptions') S.subscriptions=await request(path('subscriptions'));
     if(view==='loans') S.loans=await request(path('loans?offset='+S.loanWindowOffset));
     render();window.scrollTo({top:0,behavior:'auto'});
   }
@@ -851,7 +876,7 @@
   async function exportCSV() {
     const scope=document.getElementById('wff-export-scope')?.value||'all';
     const response=await request(path('export?scope='+encodeURIComponent(scope)));
-    const heads=['日期','範圍','類型','分類','金額','備註','付款方式','帳戶','轉入帳戶','付款通路'];
+    const heads=['日期','範圍','類型','分類','金額','備註','付款方式','帳戶','轉入帳戶','付款通路','繳費狀態'];
     const lines=[heads.join(','),...response.items.map(x=>heads.map(h=>encodeCSVCell(x[h])).join(','))];
     const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
     const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -970,6 +995,15 @@
     if(act==='delete-transaction'&&item&&confirm('確定要刪除這筆 '+money(item.amount)+' 交易？')) {
       attempt(async()=>{await request(path('transactions/'+id),'DELETE');await reload();show('已刪除交易');});
     }
+    if(act==='new-subscription')openModal('subscription',{scope:'family',unit:'month',interval:1,active:1});
+    if(act==='edit-subscription'){
+      const item=S.subscriptions?.items.find(x=>Number(x.id)===id);
+      if(item)openModal('subscription',{...item.settings,id:item.id,active:item.active});
+    }
+    if(act==='subscription-paid')attempt(async()=>{
+      await request(path('subscriptions/payments/'+id),'PUT',{paid:target.dataset.paid==='1'});
+      await reload();show('繳費狀態已更新');
+    });
     if(act==='new-loan'){openModal('loan',{scope:'family',status:'active'});}
     if(act==='edit-loan'){
       const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
@@ -1081,7 +1115,7 @@
       file.text().then(text=>{S.csv=text;S.csvName=file.name;S.importPreview=null;render();}).catch(()=>show('CSV 讀取失敗'));
     }
     if(S.modal==='account' && t.name==='type') {S.draft={...S.draft,...getFormData(t.form),enabled:t.form.querySelector('[name="enabled"]').checked?1:0};render();return;}
-    if(S.modal==='transaction' && t.form?.id==='wff-transaction-form' &&
+    if(['transaction','subscription'].includes(S.modal) && ['wff-transaction-form','wff-subscription-form'].includes(t.form?.id) &&
       ['scope','kind','payment_method','payment_channel_id'].includes(t.name)) {
       refreshTransactionFields(t.form,t.name);
     }
@@ -1115,7 +1149,7 @@
       return;
     }
     const handled = ['wff-household-form','wff-signup','wff-transaction-form',
-      'wff-category-form','wff-account-form','wff-invite-form','wff-import-form'];
+      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-account-form','wff-invite-form','wff-import-form'];
     if(!handled.includes(form.id)) return;
     ev.preventDefault();
     if(form.id==='wff-household-form'){
@@ -1148,6 +1182,11 @@
         if(button){button.disabled=false;button.textContent='儲存記帳 ✓';}
       });
     }
+    if(form.id==='wff-subscription-form')attempt(async()=>{
+      const id=S.draft.id;
+      await request(path('subscriptions'+(id?'/'+id:'')),id?'PUT':'POST',getFormData(form));
+      resetModal();await reload();show('訂閱已儲存');
+    });
     if(form.id==='wff-loan-form'){
       attempt(async()=>{
         const id=S.draft.id;

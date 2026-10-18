@@ -23,10 +23,12 @@ jobs:
           find . -name '*.php' -type f -print0 | xargs -0 -n1 php -l
       - name: Check JavaScript syntax
         run: node --check assets/js/app.js
-      - name: Test responsive monochrome design contract
+      - name: Test UI and chart contracts
         run: node --test tests/*.test.mjs
       - name: Test recurring loan schedule and amortization
         run: php tests/loan-schedule.test.php
+      - name: Test subscription calendar
+        run: php tests/subscription-schedule.test.php
       - name: Test private receipt filesystem safety
         run: |
           php tests/private-receipts.test.php safe

@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 final class WFF_Storage {
     public static function table($name) {
         global $wpdb;
-        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','receipts');
+        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','receipts','subscriptions');
         if (!in_array($name, $allowed, true)) { return ''; }
         return $wpdb->prefix . 'wff_' . $name;
     }
@@ -95,6 +95,9 @@ final class WFF_Storage {
             category_id bigint(20) unsigned DEFAULT NULL,
             amount decimal(14,2) NOT NULL,
             note varchar(255) NOT NULL DEFAULT '',
+            payment_status varchar(12) NOT NULL DEFAULT 'paid',
+            subscription_id bigint(20) unsigned DEFAULT NULL,
+            subscription_due date DEFAULT NULL,
             payment_method varchar(24) NOT NULL DEFAULT 'cash',
             payment_channel_id bigint(20) unsigned DEFAULT NULL,
             account_id bigint(20) unsigned DEFAULT NULL,
@@ -103,6 +106,7 @@ final class WFF_Storage {
             created_at datetime NOT NULL,
             updated_at datetime NOT NULL,
             PRIMARY KEY  (id),
+            UNIQUE KEY subscription_due (subscription_id,subscription_due),
             KEY household_date (household_id,occurred_on),
             KEY household_scope (household_id,scope,kind,occurred_on),
             KEY account_id (account_id),
@@ -150,6 +154,9 @@ final class WFF_Storage {
             paid_amount decimal(15,2) NOT NULL,
             extra_principal decimal(15,2) NOT NULL DEFAULT 0,
             note varchar(255) NOT NULL DEFAULT '',
+            payment_status varchar(12) NOT NULL DEFAULT 'paid',
+            subscription_id bigint(20) unsigned DEFAULT NULL,
+            subscription_due date DEFAULT NULL,
             created_by bigint(20) unsigned NOT NULL,
             created_at datetime NOT NULL,
             updated_at datetime NOT NULL,
@@ -180,7 +187,20 @@ final class WFF_Storage {
         ) $c;");
         // dbDelta adds missing columns/indexes without dropping historical data.
         // Legacy account IDs, transaction funding links and categories remain unchanged.
-        update_option('wff_db_version', WFF_VERSION);
+        $subscriptions = self::table('subscriptions');
+        dbDelta("CREATE TABLE $subscriptions (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            household_id bigint(20) unsigned NOT NULL,
+            config longtext NOT NULL,
+            next_index int unsigned NOT NULL DEFAULT 0,
+            next_due date NOT NULL,
+            active tinyint NOT NULL DEFAULT 1,
+            created_by bigint(20) unsigned NOT NULL,
+            PRIMARY KEY  (id),
+            KEY household_active (household_id,active),
+            KEY active_due (active,next_due)
+        ) $c;");
+        update_option('wff_db_version' , WFF_VERSION);
     }
 
     public static function seed_categories($household_id) {

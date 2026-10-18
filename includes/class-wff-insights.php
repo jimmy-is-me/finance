@@ -39,7 +39,7 @@ final class WFF_Insights {
         $trend = $wpdb->get_results($wpdb->prepare(
             "SELECT DATE_FORMAT(occurred_on,'%%Y-%%m') AS ym, scope,kind,
              SUM(amount) AS total FROM $t
-             WHERE household_id=%d AND occurred_on >= %s AND occurred_on < %s
+             WHERE payment_status='paid' AND household_id=%d AND occurred_on >= %s AND occurred_on < %s
              AND kind IN ('income','expense')
              GROUP BY ym,scope,kind ORDER BY ym", $hid, $start, $end
         ), ARRAY_A);
@@ -62,7 +62,7 @@ final class WFF_Insights {
         }
         $daily_rows = $wpdb->get_results($wpdb->prepare(
             "SELECT occurred_on,scope,SUM(amount) AS total FROM $t
-             WHERE household_id=%d AND occurred_on BETWEEN %s AND %s
+             WHERE payment_status='paid' AND household_id=%d AND occurred_on BETWEEN %s AND %s
              AND kind='expense' GROUP BY occurred_on,scope ORDER BY occurred_on",
             $hid, $first->format('Y-m-d'), $last->format('Y-m-d')
         ),ARRAY_A);
@@ -75,7 +75,7 @@ final class WFF_Insights {
         $categories = self::summarize($wpdb->get_results($wpdb->prepare(
             "SELECT t.scope,c.name AS label,c.color AS color,SUM(t.amount) AS total FROM $t t
              LEFT JOIN $c c ON c.id=t.category_id AND c.household_id=t.household_id
-             WHERE t.household_id=%d AND t.kind='expense' AND t.occurred_on LIKE %s
+             WHERE t.payment_status='paid' AND t.household_id=%d AND t.kind='expense' AND t.occurred_on LIKE %s
              GROUP BY t.scope,t.category_id,c.name,c.color ORDER BY total DESC",
             $hid, $month.'%'
         ),ARRAY_A),array('scope','label','color'));
@@ -109,7 +109,7 @@ final class WFF_Insights {
              FROM $t t
              LEFT JOIN $a a ON a.id=t.account_id AND a.household_id=t.household_id
              LEFT JOIN $a w ON w.id=t.payment_channel_id AND w.household_id=t.household_id
-             WHERE t.household_id=%d AND t.kind='expense'
+             WHERE t.payment_status='paid' AND t.household_id=%d AND t.kind='expense'
              AND t.occurred_on LIKE %s
              GROUP BY t.payment_method,t.account_id,t.payment_channel_id,
                a.name,a.type,w.name,w.type", $hid, $month.'%'
@@ -167,7 +167,7 @@ final class WFF_Insights {
             );
         }
         $biggest = $wpdb->get_row($wpdb->prepare(
-            "SELECT occurred_on,amount,note FROM $t WHERE household_id=%d
+            "SELECT occurred_on,amount,note FROM $t WHERE payment_status='paid' AND household_id=%d
              AND kind='expense' AND occurred_on LIKE %s
              ORDER BY amount DESC,id DESC LIMIT 1", $hid, $month.'%'
         ), ARRAY_A);

@@ -212,6 +212,7 @@ final class WFF_API {
         $page = max(1, min(100000, (int) $r->get_param('page') ?: 1));
         $per = max(5, min(100, (int) $r->get_param('per_page') ?: 30));
         $filters = array('month' => $r->get_param('month'), 'scope' => $r->get_param('scope'), 'kind' => $r->get_param('kind'));
+        WFF_Subscriptions::generate($hid);
         $rows = self::entries($hid, $filters, $per, ($page - 1) * $per);
         $rows['page'] = $page;
         $rows['pages'] = max(1, (int) ceil($rows['total'] / $per));
@@ -581,7 +582,7 @@ final class WFF_API {
         $a = WFF_Storage::table('accounts');
         $totals = array('family' => array('income'=>0,'expense'=>0), 'business'=>array('income'=>0,'expense'=>0));
         $aggregate = $wpdb->get_results($wpdb->prepare(
-            "SELECT scope,kind,SUM(amount) total FROM $t WHERE household_id=%d AND occurred_on LIKE %s AND kind IN ('income','expense') GROUP BY scope,kind",
+            "SELECT scope,kind,SUM(amount) total FROM $t WHERE payment_status='paid' AND household_id=%d AND occurred_on LIKE %s AND kind IN ('income','expense') GROUP BY scope,kind",
             $hid, $month . '%'
         ), ARRAY_A);
         foreach ($aggregate as $row) {
@@ -590,7 +591,7 @@ final class WFF_API {
         $categories = $wpdb->get_results($wpdb->prepare(
             "SELECT t.scope,COALESCE(c.name,'未分類') label,COALESCE(c.color,'#FFD93D') color,SUM(t.amount) total
              FROM $t t LEFT JOIN $c c ON c.id=t.category_id AND c.household_id=t.household_id
-             WHERE t.household_id=%d AND t.occurred_on LIKE %s AND t.kind='expense'
+             WHERE t.payment_status='paid' AND t.household_id=%d AND t.occurred_on LIKE %s AND t.kind='expense'
              GROUP BY t.scope,t.category_id,c.name,c.color ORDER BY total DESC", $hid, $month.'%'
         ), ARRAY_A);
         $daily = $wpdb->get_results($wpdb->prepare(
@@ -599,7 +600,7 @@ final class WFF_API {
              SUM(CASE WHEN c.name IN ('早餐','午餐','下午茶','晚餐','消夜','飲料','咖啡') THEN 0 ELSE t.amount END) other,
              SUM(t.amount) total
              FROM $t t LEFT JOIN $c c ON c.id=t.category_id AND c.household_id=t.household_id
-             WHERE t.household_id=%d AND t.scope='family' AND t.kind='expense' AND t.occurred_on LIKE %s
+             WHERE t.payment_status='paid' AND t.household_id=%d AND t.scope='family' AND t.kind='expense' AND t.occurred_on LIKE %s
              GROUP BY t.occurred_on ORDER BY t.occurred_on DESC", $hid, $month.'%'
         ), ARRAY_A);
         $recent = self::entries($hid, array('month'=>$month), 7, 0);
@@ -609,7 +610,7 @@ final class WFF_API {
         $today_rows = self::entries($hid, array('date'=>$today), 20, 0);
         $today_totals = array('income'=>0.0, 'expense'=>0.0, 'transfer'=>0.0);
         $today_aggregate = $wpdb->get_results($wpdb->prepare(
-            "SELECT kind,COALESCE(SUM(amount),0) amount FROM $t WHERE household_id=%d AND occurred_on=%s GROUP BY kind",
+            "SELECT kind,COALESCE(SUM(amount),0) amount FROM $t WHERE payment_status='paid' AND household_id=%d AND occurred_on=%s GROUP BY kind",
             $hid, $today
         ), ARRAY_A);
         foreach ($today_aggregate as $entry) {
@@ -625,7 +626,7 @@ final class WFF_API {
         }
         $trend = $wpdb->get_results($wpdb->prepare(
             "SELECT DATE_FORMAT(occurred_on,'%%Y-%%m') ym,kind,SUM(amount) total FROM $t
-             WHERE household_id=%d AND occurred_on >= %s AND occurred_on < %s AND kind IN ('income','expense')
+             WHERE payment_status='paid' AND household_id=%d AND occurred_on >= %s AND occurred_on < %s AND kind IN ('income','expense')
              GROUP BY ym,kind ORDER BY ym",
             $hid, array_key_first($dates).'-01', $from->modify('+1 month')->format('Y-m').'-01'
         ), ARRAY_A);
@@ -638,7 +639,7 @@ final class WFF_API {
                   WHEN t.kind='transfer' AND t.destination_account_id=a.id THEN -t.amount
                   WHEN t.kind='transfer' AND t.account_id=a.id THEN t.amount
                   WHEN t.kind='income' AND t.account_id=a.id THEN -t.amount ELSE 0 END),0) AS outstanding
-             FROM $a a LEFT JOIN $t t ON t.household_id=a.household_id AND (t.account_id=a.id OR t.destination_account_id=a.id)
+             FROM $a a LEFT JOIN $t t ON t.payment_status='paid' AND t.household_id=a.household_id AND (t.account_id=a.id OR t.destination_account_id=a.id)
              WHERE a.household_id=%d AND a.type='credit' GROUP BY a.id,a.name,a.type ORDER BY a.id", $hid
         ), ARRAY_A);
         return array(
@@ -910,7 +911,7 @@ final class WFF_API {
                     'category'=>trim($lookup['分類']??''),'amount'=>$amount,
                     'note'=>trim($lookup['備註']??''),'payment_method'=>trim($lookup['付款方式']??'cash'),
                     'account'=>trim($lookup['帳戶']??''),'destination_account'=>trim($lookup['轉入帳戶']??''),
-                    'payment_channel'=>trim($lookup['付款通路']??''));
+                    'payment_channel'=>trim($lookup['付款通路']??''),'payment_status'=>($lookup['繳費狀態']??'paid')==='unpaid'?'unpaid':'paid');
             }
             if (count($errors)>25) { break; }
         }
@@ -981,7 +982,7 @@ final class WFF_API {
                 'category_id'=>$cat,'amount'=>$item['amount'],'note'=>mb_substr(sanitize_text_field($item['note']),0,255),
                 'payment_method'=>in_array($item['payment_method'],array('cash','bank','card','mobile','other'),true)?$item['payment_method']:'other',
                 'account_id'=>$account_id,'destination_account_id'=>$destination_id,
-                'payment_channel_id'=>$channel_id,
+                'payment_channel_id'=>$channel_id,'payment_status'=>$item['payment_status']??'paid',
                 'created_by'=>get_current_user_id(),'created_at'=>current_time('mysql',true),'updated_at'=>current_time('mysql',true)
             ));
             if (!$ok) { $wpdb->query('ROLLBACK'); return self::error('交易匯入失敗，已取消本次匯入',500); }
@@ -1005,7 +1006,7 @@ final class WFF_API {
                 '分類'=>$row['category_name']??'','金額'=>$row['amount'],
                 '備註'=>$row['note'],'付款方式'=>$row['payment_method'],
                 '帳戶'=>$row['account_name']??'','轉入帳戶'=>$row['destination_account_name']??'',
-                '付款通路'=>$row['payment_channel_name']??''
+                '付款通路'=>$row['payment_channel_name']??'','繳費狀態'=>$row['payment_status']
             );
         }
         return array('items'=>$out,'total'=>count($out));

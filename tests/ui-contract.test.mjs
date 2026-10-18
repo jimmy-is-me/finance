@@ -8,11 +8,10 @@ const php = readFileSync('wumetax-finance.php', 'utf8');
 const frontend = readFileSync('includes/class-wff-frontend.php', 'utf8');
 const admin = readFileSync('includes/class-wff-admin.php', 'utf8');
 
-test('minimalist monochrome remains default without legacy color tokens', () => {
-  assert.match(css, /Minimalist Monochrome/);
-  assert.match(css, /--wff-paper:#fff/);
-  assert.doesNotMatch(css, /#FFD93D|#FF6B6B|#C4B5FD|#FFFDF5/i);
-  assert.match(css, /box-shadow:none/);
+test('Bauhaus palette and hard shadows are applied', () => {
+  assert.match(css, /--wff-red:#d02020;--wff-blue:#1040c0;--wff-yellow:#f0c020/);
+  assert.match(css, /box-shadow:5px 5px 0 #121212/);
+  assert.match(css, /prefers-reduced-motion/);
 });
 test('dashboard responsive cards and tables do not force wide layouts', () => {
   assert.match(css, /wff-metrics\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,200px\),1fr\)\)/);
@@ -27,8 +26,8 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /wff-skip-link:focus/);
   assert.match(css, /prefers-reduced-motion/);
 });
-test('v1.3.2 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.3.2'\)/);
+test('v1.4.0 homepage defaults to Finance without modifying Reading settings', () => {
+  assert.match(php, /define\('WFF_VERSION', '1.4.0'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -403,12 +402,12 @@ test('1.3.1 camera receipts are WebP <=5MB before upload',()=>{
  assert.match(js,/if\(!res\.ok\)throw new Error/);
  assert.match(js,/resetModal\(\);\s*await reload\(\)/);
 });
-test('1.3.1 category precedes note and dashboard includes current day',()=>{
+test('1.4.0 note precedes category and dashboard includes current day',()=>{
  const api=readFileSync('includes/class-wff-api.php','utf8');
  const formStart=js.indexOf("if(type==='transaction'){");
  const formEnd=js.indexOf("} else if(type==='loan'){",formStart);
  const form=js.slice(formStart,formEnd);
- assert.ok(form.indexOf("transactionFields(d)")<form.indexOf("field('備註'"));
+ assert.ok(form.indexOf("transactionFields(d)")>form.indexOf("field('備註'"));
  assert.match(api,/self::entries\(\$hid, array\('date'=>\$today\), 20, 0\)/);
  assert.match(api,/wp_date\('Y-m-d'\)/);
  assert.match(api,/'today'=>array\(/);

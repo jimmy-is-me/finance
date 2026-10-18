@@ -3,7 +3,7 @@
  * Plugin Name: WUMETAX Finance
  * Plugin URI: https://github.com/jimmy-is-me/finance
  * Description: 家庭與公司共同財務管理：獨立首頁、前台登入、家庭共用記帳、信用卡、分析報表及完整後台管理。
- * Version: 1.3.2
+ * Version: 1.4.0
  * Requires at least: 6.2
  * Requires PHP: 7.4
  * Author: WUMETAX 末特數位科技
@@ -13,7 +13,7 @@
  */
 if (!defined('ABSPATH')) { exit; }
 
-define('WFF_VERSION', '1.3.2');
+define('WFF_VERSION', '1.4.0');
 define('WFF_PATH', plugin_dir_path(__FILE__));
 define('WFF_URL', plugin_dir_url(__FILE__));
 
@@ -23,6 +23,7 @@ require_once WFF_PATH . 'includes/class-wff-receipt-media.php';
 require_once WFF_PATH . 'includes/class-wff-api.php';
 require_once WFF_PATH . 'includes/class-wff-insights.php';
 require_once WFF_PATH . 'includes/class-wff-loans.php';
+require_once WFF_PATH . 'includes/class-wff-subscriptions.php';
 require_once WFF_PATH . 'includes/class-wff-mail.php';
 require_once WFF_PATH . 'includes/class-wff-frontend.php';
 require_once WFF_PATH . 'includes/class-wff-admin.php';
@@ -49,3 +50,6 @@ add_action('rest_api_init', array('WFF_Loans', 'register'));
 add_shortcode('wumetax_family_finance', function () {
     return '<div id="wff-app"><p>載入家庭財務管理中…</p></div>';
 });
+
+WFF_Subscriptions::init();
+register_deactivation_hook(__FILE__, array('WFF_Subscriptions', 'deactivate'));
