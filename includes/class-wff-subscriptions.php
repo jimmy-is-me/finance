@@ -21,7 +21,10 @@ final class WFF_Subscriptions {
             array('methods'=>'GET','callback'=>array(__CLASS__,'listing'),'permission_callback'=>$read),
             array('methods'=>'POST','callback'=>array(__CLASS__,'save'),'permission_callback'=>$write),
         ));
-        register_rest_route(WFF_API::NS,$base.'/(?P<id>\d+)',array('methods'=>'PUT','callback'=>array(__CLASS__,'save'),'permission_callback'=>$write));
+        register_rest_route(WFF_API::NS,$base.'/(?P<id>\d+)',array(
+            array('methods'=>'PUT','callback'=>array(__CLASS__,'save'),'permission_callback'=>$write),
+            array('methods'=>'DELETE','callback'=>array(__CLASS__,'remove'),'permission_callback'=>$write),
+        ));
         register_rest_route(WFF_API::NS,$base.'/payments/(?P<id>\d+)',array('methods'=>'PUT','callback'=>array(__CLASS__,'payment'),'permission_callback'=>$write));
     }
     private static function error($text) { return new WP_Error('wff_subscription',$text,array('status'=>400)); }
@@ -46,6 +49,9 @@ final class WFF_Subscriptions {
         foreach(array('name','scope','start_on','end_on','unit','note','payment_method') as $key)$c[$key]=sanitize_text_field($r->get_param($key)??'');
         foreach(array('category_id','account_id','payment_channel_id','interval') as $key)$c[$key]=absint($r->get_param($key));
         $c['amount']=(float)$r->get_param('amount');
+        $usd=trim((string)$r->get_param('original_usd'));
+        if($usd!==''&&(!preg_match('/^\d+(?:\.\d{1,2})?$/',$usd)||(float)$usd<=0||(float)$usd>9999999999))return self::error('美金原價請填大於 0 的數字，最多兩位小數');
+        $c['original_usd']=$usd===''?'':number_format((float)$usd,2,'.','');
         if(!$c['name']||mb_strlen($c['name'])>120||!self::date($c['start_on'])||($c['end_on']&&(!self::date($c['end_on'])||$c['end_on']<$c['start_on']))||!in_array($c['scope'],array('family','business'),true)||!in_array($c['unit'],array('day','week','month','year'),true)||$c['interval']<1||$c['interval']>120||$c['amount']<=0||$c['amount']>9999999999||floor($c['amount'])!==$c['amount'])return self::error('請確認名稱、整數金額、日期與週期（1–120）');
         $cat=WFF_Storage::table('categories');$accounts=WFF_Storage::table('accounts');
         if(!$wpdb->get_var($wpdb->prepare("SELECT id FROM $cat WHERE id=%d AND household_id=%d AND scope=%s AND kind='expense'",$c['category_id'],$hid,$c['scope'])))return self::error('請選擇同帳本的支出分類');
@@ -68,7 +74,20 @@ final class WFF_Subscriptions {
         self::generate($hid);
         return array('id'=>$id);
     }
-    public static function tick(){ self::generate(); }
+    public static function usd_note($c){
+        return !empty($c['original_usd'])?' · 原價 US$ '.number_format((float)$c['original_usd'],2,'.',''):'';
+    }
+    public static function tick(){ self::generate(); WFF_Loans::generate(); }
+    public static function remove($r){
+        global $wpdb;$table=WFF_Storage::table('subscriptions');
+        $row=$wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id=%d AND household_id=%d",(int)$r['id'],(int)$r['hid']),ARRAY_A);
+        if(!$row)return self::error('找不到訂閱');
+        if((int)$row['active'])return self::error('請先停止訂閱再刪除');
+        $ok=$wpdb->query($wpdb->prepare("DELETE FROM $table WHERE id=%d AND household_id=%d AND active=0",(int)$r['id'],(int)$r['hid']));
+        if(!$ok)return self::error('訂閱已變更，請重新整理後再試');
+        WFF_Storage::activity((int)$r['hid'],'delete_subscription',(int)$r['id']);
+        return array('deleted'=>true);
+    }
     public static function generate($hid=0) {
         global $wpdb;
         $table=WFF_Storage::table('subscriptions');$tx=WFF_Storage::table('transactions');
@@ -89,7 +108,7 @@ final class WFF_Subscriptions {
                     $existing=$wpdb->get_var($wpdb->prepare("SELECT id FROM $tx WHERE subscription_id=%d AND subscription_due=%s",$row['id'],$due));
                     if(!$existing){
                         $now=current_time('mysql',true);
-                        $ok=$wpdb->insert($tx,array('household_id'=>$row['household_id'],'occurred_on'=>$due,'scope'=>$c['scope'],'kind'=>'expense','category_id'=>$c['category_id'],'amount'=>$c['amount'],'note'=>mb_substr($c['name'].($c['note']?' · '.$c['note']:''),0,255),'payment_method'=>$c['payment_method'],'account_id'=>$c['account_id']?:null,'payment_channel_id'=>$c['payment_channel_id']?:null,'payment_status'=>'unpaid','subscription_id'=>$row['id'],'subscription_due'=>$due,'created_by'=>$row['created_by'],'created_at'=>$now,'updated_at'=>$now));
+                        $ok=$wpdb->insert($tx,array('household_id'=>$row['household_id'],'occurred_on'=>$due,'scope'=>$c['scope'],'kind'=>'expense','category_id'=>$c['category_id'],'amount'=>$c['amount'],'note'=>mb_substr($c['name'].self::usd_note($c).($c['note']?' · '.$c['note']:''),0,255),'payment_method'=>$c['payment_method'],'account_id'=>$c['account_id']?:null,'payment_channel_id'=>$c['payment_channel_id']?:null,'payment_status'=>'unpaid','subscription_id'=>$row['id'],'subscription_due'=>$due,'created_by'=>$row['created_by'],'created_at'=>$now,'updated_at'=>$now));
                         if($ok===false)break;
                     }
                     $index++;
@@ -110,6 +129,14 @@ final class WFF_Subscriptions {
         if($wpdb->get_var($wpdb->prepare("SELECT role FROM $members WHERE household_id=%d AND user_id=%d",$hid,get_current_user_id()))!=='owner')return self::error('只有家庭管理員可確認繳費');
         if(!$wpdb->get_var($wpdb->prepare("SELECT id FROM $tx WHERE id=%d AND household_id=%d",$id,$hid)))return self::error('找不到訂閱收支');
         $status=$r->get_param('paid')?'paid':'unpaid';
+        $linked=$wpdb->get_row($wpdb->prepare("SELECT * FROM $tx WHERE id=%d AND household_id=%d",$id,$hid),ARRAY_A);
+        if(!empty($linked['loan_id'])){
+            $req=new WP_REST_Request('POST');
+            foreach(array('hid'=>$hid,'id'=>$linked['loan_id'],'installment_no'=>$linked['loan_installment'],'number'=>$linked['loan_installment'],'paid_on'=>wp_date('Y-m-d'),'paid_amount'=>$linked['amount'],'note'=>$linked['note']) as $key=>$value)$req->set_param($key,$value);
+            $result=$status==='paid'?WFF_Loans::save_payment($req):WFF_Loans::delete_payment($req);
+            if(is_wp_error($result))return $result;
+            return array('saved'=>true);
+        }
         $ok=$wpdb->update($tx,array('payment_status'=>$status,'updated_at'=>current_time('mysql',true)),array('id'=>$id,'household_id'=>$hid));
         if($ok===false)return self::error('更新失敗');
         WFF_Storage::activity($hid,'subscription_'.$status,$id);return array('saved'=>true);

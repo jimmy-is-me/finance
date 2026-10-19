@@ -213,6 +213,7 @@ final class WFF_API {
         $per = max(5, min(100, (int) $r->get_param('per_page') ?: 30));
         $filters = array('month' => $r->get_param('month'), 'scope' => $r->get_param('scope'), 'kind' => $r->get_param('kind'));
         WFF_Subscriptions::generate($hid);
+        WFF_Loans::generate($hid);
         $rows = self::entries($hid, $filters, $per, ($page - 1) * $per);
         $rows['page'] = $page;
         $rows['pages'] = max(1, (int) ceil($rows['total'] / $per));
@@ -227,7 +228,7 @@ final class WFF_API {
         $t = WFF_Storage::table('transactions');
         $id = (int) $r->get_param('id');
         $original_tx = $id ? $wpdb->get_row($wpdb->prepare(
-            "SELECT id,payment_method,account_id,destination_account_id,payment_channel_id,kind
+            "SELECT id,payment_method,account_id,destination_account_id,payment_channel_id,kind,loan_id,scope,payment_status,amount
              FROM $t WHERE id=%d AND household_id=%d", $id, $hid
         ), ARRAY_A) : null;
         if ($id && !$original_tx) { return self::error('找不到此交易', 404); }
@@ -304,8 +305,17 @@ final class WFF_API {
                 }
             }
         } else { $channel = null; $pay = 'bank'; }
+        if(!empty($original_tx['loan_id'])){
+            if($kind!=='expense'||$scope!==$original_tx['scope'])return self::error('貸款收支請保留原帳本與支出類型');
+            if($original_tx['payment_status']==='paid'&&abs($amount-(float)$original_tx['amount'])>0.005)return self::error('已繳貸款金額請從貸款紀錄的「修改紀錄」調整，系統會同步收支');
+        }
+        $statement=self::date($r->get_param('statement_on'));
+        $payment_due=self::date($r->get_param('payment_due_on'));
+        foreach(array('statement_on'=>$statement,'payment_due_on'=>$payment_due) as $key=>$valid){if($r->get_param($key)&&!$valid)return self::error('帳單日期格式不正確');}
+        if($statement&&$payment_due&&$payment_due<$statement)return self::error('繳款期限不能早於出帳日期');
         $now = current_time('mysql', true);
         $data = array(
+            'statement_on'=>$kind==='transfer'?$statement:null,'payment_due_on'=>$kind==='transfer'?$payment_due:null,
             'household_id' => $hid, 'occurred_on' => $date, 'scope' => $scope,
             'kind' => $kind, 'category_id' => $cat_id, 'amount' => $amount,
             'note' => mb_substr(sanitize_text_field($r->get_param('note')), 0, 255),

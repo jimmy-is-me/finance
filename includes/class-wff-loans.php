@@ -1,13 +1,7 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 
-/**
- * Manual loan register and recurring monthly repayment schedule.
- *
- * Scheduled installments are projections, not actual financial transactions.
- * Posting a repayment here NEVER inserts a ledger expense/transfer, avoiding
- * duplicates with bank-imported and manually entered transactions.
- */
+/** Monthly loan reminders with linked, unpaid ledger occurrences. */
 final class WFF_Loans {
     const NS = 'wff/v1';
     private static function error($message, $status = 400) {
@@ -197,9 +191,43 @@ final class WFF_Loans {
             'regular_payment'=>$regular,
         );
     }
+    public static function generate($hid=0) {
+        global $wpdb;
+        $table=WFF_Storage::table('loans');$tx=WFF_Storage::table('transactions');$cats=WFF_Storage::table('categories');$pay=WFF_Storage::table('loan_payments');$members=WFF_Storage::table('members');
+        $where=$hid?$wpdb->prepare(' AND household_id=%d',$hid):'';
+        $rows=$wpdb->get_results("SELECT * FROM $table WHERE status='active' AND ledger_next<2400 AND (tracking_mode='simple' OR ledger_next<installments) AND DATE_ADD(first_due_on,INTERVAL ledger_next MONTH)<='".esc_sql(wp_date('Y-m-d'))."' $where ORDER BY updated_at,id LIMIT 100",ARRAY_A);
+        foreach($rows as $loan){
+            $lock='wff_loan_'.md5($wpdb->prefix.$loan['id']);
+            if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s,0)',$lock))!==1)continue;
+            try{
+                $loan=$wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id=%d AND status='active'",$loan['id']),ARRAY_A);
+                if(!$loan)continue;
+                $cat=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $cats WHERE household_id=%d AND scope=%s AND kind='expense' AND name='貸款繳款'",$loan['household_id'],$loan['scope']));
+                if(!$cat){
+                    if(!$wpdb->insert($cats,array('household_id'=>$loan['household_id'],'scope'=>$loan['scope'],'kind'=>'expense','name'=>'貸款繳款','color'=>'#2457c5','created_at'=>current_time('mysql',true))))continue;
+                    $cat=(int)$wpdb->insert_id;
+                }
+                $owner=(int)$wpdb->get_var($wpdb->prepare("SELECT user_id FROM $members WHERE household_id=%d AND role='owner' ORDER BY user_id LIMIT 1",$loan['household_id']));
+                for($batch=0;$batch<24;$batch++){
+                    $index=(int)$loan['ledger_next'];$num=$index+1;$due=self::due($loan,$index);
+                    if($index>=2400||$due>wp_date('Y-m-d')||($loan['tracking_mode']!=='simple'&&$num>(int)$loan['installments']))break;
+                    $existing=$wpdb->get_var($wpdb->prepare("SELECT id FROM $tx WHERE loan_id=%d AND loan_installment=%d",$loan['id'],$num));
+                    if(!$existing){
+                        $p=$wpdb->get_row($wpdb->prepare("SELECT * FROM $pay WHERE loan_id=%d AND installment_no=%d",$loan['id'],$num),ARRAY_A);
+                        $now=current_time('mysql',true);
+                        if(!$wpdb->insert($tx,array('household_id'=>$loan['household_id'],'occurred_on'=>$due,'scope'=>$loan['scope'],'kind'=>'expense','category_id'=>$cat,'amount'=>$p?(float)$p['paid_amount']+(float)$p['extra_principal']:self::regular_amount($loan),'note'=>mb_substr($loan['name'].' · '.($p?$p['note']:$loan['notes']),0,255),'payment_status'=>$p&&!empty($p['paid_on'])?'paid':'unpaid','loan_id'=>$loan['id'],'loan_installment'=>$num,'payment_method'=>'other','created_by'=>$owner,'created_at'=>$now,'updated_at'=>$now)))break;
+                    }
+                    $loan['ledger_next']++;
+                    if($wpdb->update($table,array('ledger_next'=>$loan['ledger_next'],'updated_at'=>current_time('mysql',true)),array('id'=>$loan['id']))===false)break;
+                }
+                $wpdb->update($table,array('updated_at'=>current_time('mysql',true)),array('id'=>$loan['id']));
+            }finally{$wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)',$lock));}
+        }
+    }
     public static function list_loans($request) {
         global $wpdb;
         $hid=(int)$request['hid'];
+        self::generate($hid);
         $table=WFF_Storage::table('loans');
         $payments=WFF_Storage::table('loan_payments');
         $rows=$wpdb->get_results($wpdb->prepare(
@@ -251,7 +279,7 @@ final class WFF_Loans {
         $principal=$old?(float)$old['opening_principal']:0;
         $rate=$old?(float)$old['annual_rate']:0;
         $months=$old?(int)$old['installments']:0;
-        if($count && $first!==$old['first_due_on']){
+        if(($count || (int)($old['ledger_next']??0)>0) && $first!==$old['first_due_on']){
             return self::error('已有繳款紀錄，不能改動最初扣款日期，避免歷史月份對應錯誤');
         }
         if($mode==='amortized' && $old && $count &&
@@ -293,10 +321,13 @@ final class WFF_Loans {
         }
         if($ok===false)return self::error('儲存每月繳款追蹤失敗',500);
         WFF_Storage::activity($hid,$old?'update_loan':'create_loan',$id);
+        self::generate($hid);
         return array('saved'=>true,'id'=>$id);
     }
     public static function save_payment($request) {
         global $wpdb;
+        $members=WFF_Storage::table('members');
+        if($wpdb->get_var($wpdb->prepare("SELECT role FROM $members WHERE household_id=%d AND user_id=%d",(int)$request['hid'],get_current_user_id()))!=='owner')return self::error('只有家庭管理員可確認繳費',403);
         $hid=(int)$request['hid'];
         $auth=self::authorize($hid,true);
         if(is_wp_error($auth))return $auth;
@@ -315,8 +346,10 @@ final class WFF_Loans {
             : self::amount($raw_amount, $simple);
         $extra_raw=$request->get_param('extra_principal');
         $extra=$simple?0:($extra_raw===null||$extra_raw===''?0:self::amount($extra_raw,true));
-        if(!$paid_on||$amount===false||$extra===false)return self::error('請輸入正確的繳款日期與金額');
+        if(!$paid_on||$amount===false||$amount<=0||$extra===false)return self::error('請輸入正確的繳款日期與金額');
         $note=mb_substr(sanitize_text_field($request->get_param('note')),0,255);
+        self::generate($hid);
+        $wpdb->query('START TRANSACTION');
         $table=WFF_Storage::table('loan_payments');
         $existing=(int)$wpdb->get_var($wpdb->prepare(
             "SELECT id FROM $table WHERE household_id=%d AND loan_id=%d AND installment_no=%d",
@@ -336,23 +369,32 @@ final class WFF_Loans {
             $data['created_by']=get_current_user_id();$data['created_at']=$now;
             $ok=$wpdb->insert($table,$data);
         }
-        if($ok===false)return self::error('儲存繳款紀錄失敗',500);
+        if($ok===false){$wpdb->query('ROLLBACK');return self::error('儲存繳款紀錄失敗',500);}
+        $tx=WFF_Storage::table('transactions');
+        if($wpdb->update($tx,array('payment_status'=>'paid','amount'=>$amount+$extra,'note'=>$loan['name'].($note?' · '.$note:''),'updated_at'=>$now),array('household_id'=>$hid,'loan_id'=>$id,'loan_installment'=>(int)$num))===false){$wpdb->query('ROLLBACK');return self::error('收支同步失敗，請重試',500);}
+        $wpdb->query('COMMIT');
         WFF_Storage::activity($hid,'save_loan_payment',$id,'第'.(int)$num.'期');
         return array('saved'=>true,'installment_no'=>(int)$num);
     }
     public static function delete_payment($request) {
         global $wpdb;
+        $members=WFF_Storage::table('members');
+        if($wpdb->get_var($wpdb->prepare("SELECT role FROM $members WHERE household_id=%d AND user_id=%d",(int)$request['hid'],get_current_user_id()))!=='owner')return self::error('只有家庭管理員可確認繳費',403);
         $hid=(int)$request['hid'];
         $auth=self::authorize($hid,true);
         if(is_wp_error($auth))return $auth;
         $loan=self::loan($hid,(int)$request['id']);
         if(!$loan)return self::error('找不到貸款紀錄',404);
+        $wpdb->query('START TRANSACTION');
         $table=WFF_Storage::table('loan_payments');
         $ok=$wpdb->delete($table,array(
             'household_id'=>$hid,'loan_id'=>(int)$request['id'],
             'installment_no'=>(int)$request['number']
         ));
-        if($ok===false)return self::error('取消繳款紀錄失敗',500);
+        if($ok===false){$wpdb->query('ROLLBACK');return self::error('取消繳款紀錄失敗',500);}
+        $tx=WFF_Storage::table('transactions');
+        if($wpdb->update($tx,array('payment_status'=>'unpaid','amount'=>self::regular_amount($loan),'updated_at'=>current_time('mysql',true)),array('household_id'=>$hid,'loan_id'=>(int)$request['id'],'loan_installment'=>(int)$request['number']))===false){$wpdb->query('ROLLBACK');return self::error('收支同步失敗，請重試',500);}
+        $wpdb->query('COMMIT');
         WFF_Storage::activity($hid,'undo_loan_payment',(int)$request['id'],'第'.(int)$request['number'].'期');
         return array('deleted'=>(bool)$ok);
     }

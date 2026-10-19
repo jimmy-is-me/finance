@@ -16,3 +16,6 @@ expect_date($c,1,'2027-01-11');
 $c=array('start_on'=>'2026-01-31','unit'=>'month','interval'=>3);
 expect_date($c,1,'2026-04-30');expect_date($c,2,'2026-07-31');
 echo "Subscription calendar tests passed\n";
+
+if(WFF_Subscriptions::usd_note(array('original_usd'=>'20'))!==' · 原價 US$ 20.00')throw new Exception('USD reference format');
+if(WFF_Subscriptions::usd_note(array())!=='')throw new Exception('Legacy subscription without USD');

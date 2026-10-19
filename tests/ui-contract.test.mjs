@@ -27,7 +27,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.4.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.4.0'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.5.3'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -257,11 +257,14 @@ test('loans module appears directly below ledger and uses household-scoped REST'
   assert.match(loans, /extra_principal/);
   assert.match(php, /class-wff-loans.php/);
 });
-test('projected loan payments are not automatically double-booked into expenses',()=>{
+test('loan ledger occurrences are unique and unpaid until confirmed by an owner',()=>{
   const loans=readFileSync('includes/class-wff-loans.php','utf8');
-  assert.doesNotMatch(loans, /WFF_Storage::table\('transactions'\)/);
-  assert.match(loans, /loan_payments/);
-  assert.match(js, /不會自動新增收支交易/);
+  assert.match(loans, /WFF_Storage::table\('transactions'\)/);
+  assert.match(loans, /GET_LOCK/);
+  assert.match(loans, /loan_installment/);
+  assert.match(loans, /'paid':'unpaid'/);
+  assert.match(loans, /只有家庭管理員可確認繳費/);
+  assert.match(loans, /ROLLBACK/);
 });
 test('clicking the modal backdrop or pressing Escape does not discard unsaved edits',()=>{
   assert.match(js, /<div class="wff-overlay" role="presentation">/);
@@ -294,7 +297,7 @@ test('v1.2.7 new loans are simple tracking with no required APR or principal',()
 });
 test('monthly repayment is a manual one-step journal with bounded navigation',()=>{
  for(const token of ['quick-pay-loan','loan-window-prev','loan-window-next',
-   'loan-window-today','paid_amount:loan.regular_payment||0','不會自動新增收支交易']){
+   'loan-window-today','paid_amount:loan.regular_payment||0','到期自動新增未繳費收支']){
    assert.ok(js.includes(token),'missing '+token);
  }
 });
@@ -391,12 +394,12 @@ test('1.3.1 iPhone date controls are stable and use no zoom disabling',()=>{
  assert.match(template,/width=device-width,initial-scale=1,viewport-fit=cover/);
  assert.doesNotMatch(template,/user-scalable=no|maximum-scale=1/);
 });
-test('1.3.1 camera receipts are WebP <=5MB before upload',()=>{
+test('1.3.1 camera receipts are JPEG <=5MB before upload',()=>{
  const storage=readFileSync('includes/class-wff-private-receipts.php','utf8');
  assert.match(storage,/const MAX_BYTES = 5242880/);
  assert.match(js,/const receiptMaxBytes = 5 \* 1024 \* 1024/);
  assert.match(js,/async function compressReceipt\(file\)/);
- assert.match(js,/canvas\.toBlob\(resolve,'image\/webp',quality\)/);
+ assert.match(js,/canvas\.toBlob\(resolve,'image\/jpeg',quality\)/);
  assert.match(js,/compressed\.size\/1024\/1024/);
  assert.match(js,/await S\.receiptProcessing/);
  assert.match(js,/if\(!res\.ok\)throw new Error/);

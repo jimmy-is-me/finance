@@ -841,3 +841,34 @@ body.wff-standalone,#wff-app{font-family:Outfit,"Noto Sans TC","Microsoft JhengH
 #wff-app .wff-footer{border-top:3px solid #121212;background:#121212;color:#fff;padding:20px}
 @media(max-width:800px){#wff-app .wff-panel{padding:16px;box-shadow:3px 3px 0 #121212}#wff-app .wff-metric{padding:14px;box-shadow:3px 3px 0 #121212}#wff-app .wff-mobile-bottom{border-top:3px solid #121212;background:#f0c020}#wff-app .wff-modal{box-shadow:none}#wff-app h1{font-size:28px}}
 @media(prefers-reduced-motion:reduce){#wff-app *{transition:none!important;animation:none!important}}
+
+/* Keep editor titles in normal flow, clear of the close control and page headings. */
+#wff-app .wff-modal-head{position:relative!important;top:auto!important;display:block!important;padding:14px 58px 16px 14px!important;min-height:88px;isolation:isolate}
+#wff-app .wff-modal-head h2{display:block!important;float:none!important;position:static!important;transform:none!important;font-size:clamp(22px,5vw,29px)!important;line-height:1.45!important;letter-spacing:normal!important;overflow-wrap:anywhere;margin:6px 0 0!important;background:none!important;box-shadow:none!important;color:#121212!important}
+#wff-app .wff-modal-head h2::before,#wff-app .wff-modal-head h2::after{content:none!important}
+#wff-app .wff-modal-close{top:12px!important;right:10px!important}
+#wff-app .wff-bill-dates[hidden]{display:none!important}
+
+/* Shared recurring-payment tables and actions use the same Bauhaus controls. */
+#wff-app .wff-subscription-table{min-width:1040px;width:100%;border-collapse:collapse}
+#wff-app :is(.wff-subscription-table,.wff-loan-table) :is(th,td){padding:14px 12px;font-size:13px;line-height:1.6;text-align:left;vertical-align:middle}
+#wff-app :is(.wff-subscription-table,.wff-loan-table) th{background:#f0c020;color:#121212;font-weight:900;border-bottom:2px solid #121212}
+#wff-app :is(.wff-subscription-table,.wff-loan-table) td{border-bottom:1px solid #ccc}
+#wff-app .wff-subscription-table td:nth-child(2){min-width:160px;max-width:280px;white-space:normal;overflow-wrap:anywhere}
+#wff-app .wff-subscription-table td:nth-child(3){text-align:right;white-space:nowrap}
+#wff-app .wff-subscription-table td small{display:block;color:#444;margin-top:3px}
+#wff-app .wff-row-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:180px}
+#wff-app .wff-row-actions :is(.wff-textbtn,.wff-button){display:inline-flex;align-items:center;justify-content:center;width:auto;min-height:36px;margin:0;padding:6px 12px;border:2px solid #121212;border-radius:0;background:#fff;color:#121212;box-shadow:none;font-size:12px;font-weight:800;line-height:1.5;text-decoration:none;white-space:nowrap}
+#wff-app .wff-row-actions :is(.wff-textbtn,.wff-button):hover{background:#f0c020;color:#121212}
+#wff-app .wff-loan-state{border:2px solid #121212;border-radius:0;padding:4px 9px;font-size:12px;font-weight:800;line-height:1.5;background:#f0c020;color:#121212}
+#wff-app .wff-loan-state-paid{background:#1040c0;color:#fff}
+#wff-app .wff-loan-state-overdue{background:#d02020;color:#fff;border-style:solid}
+#wff-app .wff-loan-state-partial{background:#f0c020;color:#121212}
+#wff-app .wff-loan-state-stopped{background:#eee;color:#444}
+@media(max-width:800px){#wff-app .wff-row-actions :is(.wff-textbtn,.wff-button){min-height:44px}}
+
+/* Stable table actions, independent of theme button resets. */
+#wff-app .wff-row-actions{display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;gap:10px!important;align-items:center!important}
+#wff-app .wff-row-actions>button{display:inline-flex!important;position:static!important;float:none!important;width:auto!important;min-width:52px!important;margin:0!important;padding:7px 12px!important;border:2px solid #121212!important;border-radius:0!important;box-shadow:none!important;font-size:12px!important;font-weight:800!important;line-height:1.5!important;letter-spacing:normal!important}
+#wff-app .wff-subscription-table .wff-usd-note{font-weight:800;color:#1040c0}
+#wff-app :is(.wff-subscription-table,.wff-loan-table) th{font-size:13px!important;font-weight:900!important}
