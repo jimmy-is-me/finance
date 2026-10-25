@@ -525,7 +525,8 @@
         e(accountLabel(a.type))+' / '+(Number(a.enabled)===0?'已停用':'使用中')+'</div>'+
         '<h2>'+e(a.name)+'</h2>'+
         (a.brand?'<div class="wff-tool-brand">'+e(a.brand)+'</div>':'')+
-        detail+(a.type==='credit'&&canEdit()&&period?'<button class="wff-button" type="button" data-action="card-payment" data-id="'+e(a.id)+'" data-statement="'+e(period.statement_on)+'">'+(period.payment?'修改本期繳費':'登記本期繳費')+'</button>':'')+
+        detail+(a.type==='credit'&&canEdit()&&period?'<button class="wff-button" type="button" data-action="card-payment" data-id="'+e(a.id)+'" data-statement="'+e(period.statement_on)+'">'+(period.payment?'✓ 本期已繳・修改紀錄':'✓ 登記本期已繳費')+'</button>':'')+
+        (a.type==='credit'&&canEdit()&&!period?'<button class="wff-button" type="button" data-action="edit-account" data-id="'+e(a.id)+'">設定固定出帳日／繳款日</button>':'')+
         (a.type==='credit'&&period?'<button class="wff-textbtn wff-card-history-link" type="button" data-action="card-history" data-id="'+e(a.id)+'">查看最近 12 期繳費紀錄 ↗</button>':'')+
         (a.notes?'<p class="wff-small">'+e(a.notes)+'</p>':'')+
         (canEdit()?'<button class="wff-textbtn" data-action="edit-account" data-id="'+e(a.id)+'" type="button">編輯付款工具 ↗</button>':'')+
@@ -724,12 +725,14 @@
        '<div class="wff-note">到期會自動新增未繳費收支，管理員標記已繳後才計入支出；金額留白時先建立零元待繳，繳費時補上金額。過去日期會補登歷史月份，已有手動記帳請避免重複。</div>'+
        field('名稱','<input name="name" value="'+e(d.name||'')+'" maxlength="120" placeholder="例如：CX-5 車貸、房貸、信貸" required>')+
        '<div class="wff-form-grid">'+
-       field('每月預計金額（選填）','<input name="monthly_payment" type="number" step=".01" min="0" value="'+e(Number(d.monthly_payment)||'')+'" placeholder="不確定可先留白">')+
+       field(d.id?'調整後每月預計金額':'每月預計金額（選填）','<input name="monthly_payment" type="number" step=".01" min="0" value="'+e(Number(d.monthly_payment)||'')+'" placeholder="不確定可先留白">')+
        field('每月固定繳款日',dateControl('first_due_on',d.first_due_on||new Date().toLocaleDateString('sv-SE')))+'</div>'+
        '<div class="wff-form-grid">'+
        field('所屬帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+
        field('銀行／貸款機構（選填）','<input name="lender" value="'+e(d.lender||'')+'" maxlength="120" placeholder="例如：玉山銀行">')+'</div>'+
        field('備註（選填）','<input name="notes" maxlength="255" value="'+e(d.notes||'')+'" placeholder="例如：每月自動扣款">')+
+       (d.id&&d.tracking_mode==='simple'?field('新金額從哪個月份開始','<input name="amount_change_from" type="month" required value="'+e(d.amount_change_from||new Date().toLocaleDateString('sv-SE').slice(0,7))+'">')+
+       '<p class="wff-small">若貸款金額調漲，修改上方金額並選擇開始適用的月份；已繳期數及實際付款金額都不會被改動。未變更金額時無須調整這一欄。</p>':'')+
        field('追蹤狀態','<select name="status">'+selectValues([['active','持續追蹤'],['closed','停止追蹤']],d.status||'active')+'</select>')+
        (d.id && d.tracking_mode!=='simple'?'<div class="wff-note">舊版貸款的本金、年利率與期數資料會原樣保留，不需要重新填寫。如已有繳款，首次日期和部分金額不可修改。</div>':'')+
        '<button type="submit" class="wff-button wff-primary">儲存每月繳款 ✓</button></form>';
