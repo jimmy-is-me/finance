@@ -29,6 +29,8 @@ jobs:
         run: |
           php tests/loan-schedule.test.php
           php tests/loan-ledger.test.php
+      - name: Test credit card cross-month statement calendar
+        run: php tests/card-cycles.test.php
       - name: Test subscription calendar
         run: php tests/subscription-schedule.test.php
       - name: Test private receipt filesystem safety
