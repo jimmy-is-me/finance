@@ -83,4 +83,23 @@ $manual=$tracker;$manual['first_due_on']='2027-01-31';$manual['due_day']=31;
 expect(invoke_private('due',$manual,1),'2027-02-28','Tracker clamps month end');
 expect(invoke_private('due',$manual,2),'2027-03-31','Tracker restores 31st');
 
+// Amount increases must not retroactively change already-paid installments.
+$tracker['monthly_payment']=15000;
+$tracker['amount_changes']=array(
+    array('installment_no'=>1,'monthly_payment'=>12129),
+    array('installment_no'=>3,'monthly_payment'=>15000)
+);
+expect(invoke_private('amount_for_installment',$tracker,1),12129.0,'Historical paid amount plan remains old');
+expect(invoke_private('amount_for_installment',$tracker,2),12129.0,'Prior unpaid installment stays old');
+expect(invoke_private('amount_for_installment',$tracker,3),15000.0,'Increase applies at chosen installment');
+expect(invoke_private('amount_for_installment',$tracker,4),15000.0,'New amount continues');
+$paid_projection=invoke_private('projection',$tracker,array(
+    array('installment_no'=>1,'paid_amount'=>12129,'extra_principal'=>0,'paid_on'=>'2026-10-05','note'=>'已繳')
+),0);
+foreach($paid_projection['schedule'] as $p) {
+    if($p['number']===1) {
+        expect($p['scheduled_amount'],12129.0,'Paid installment displays its original planned amount');
+        expect($p['paid_amount'],12129.0,'Paid installment keeps its actual payment');
+    }
+}
 echo "Loan recurring due dates / month-end / leap years / unpaid / principal / interest / simple tracking: OK\n";
