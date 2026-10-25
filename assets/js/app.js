@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.2.3 — payment tools and interactive analytics */
+/* WUMETAX Finance v1.5.4 — fixed-cycle credit card payment status */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -781,13 +781,13 @@
         '<div>只登記這一期是否已繳，不會新增收支、轉帳，也不會重複扣除信用卡費。</div></div>'+
         '<form class="wff-form" id="wff-card-payment-form"><div class="wff-form-grid">'+
         field('實際繳費日期',dateControl('paid_on',payment?.paid_on||S.cardPayments?.today||new Date().toLocaleDateString('sv-SE')))+
-        field('實際繳費金額（NT$）','<input name="amount" type="number" step="1" min="1" required inputmode="numeric" value="'+e(payment?.amount||'')+'" placeholder="輸入本次繳費金額">')+
+        field('實際繳費金額（NT$）','<input name="amount" type="number" step=".01" min=".01" required inputmode="decimal" value="'+e(payment?.amount||'')+'" placeholder="輸入本次繳費金額">')+
         '</div><button type="submit" class="wff-button wff-primary">確認本期已繳 ✓</button></form>'+
         (payment&&canEdit()?'<button type="button" class="wff-textbtn" data-action="delete-card-payment" data-id="'+e(payment.id)+'">取消本期已繳紀錄</button>':'');
     } else if(type==='card-history'){
       const card=(S.meta?.accounts||[]).find(a=>Number(a.id)===Number(d.card_id));
       const periods=S.cardPayments?.cards?.[d.card_id]?.periods||[];
-      title=e(card?.name||'信用卡')+' · 最近 12 期';
+      title=(card?.name||'信用卡')+' · 最近 12 期';
       body='<div class="wff-card-history">'+periods.map(period=>
         '<div class="wff-card-history-row"><div><strong>'+e(period.statement_on)+' 結帳</strong>'+
         '<small>帳期 '+e(period.starts_on)+' ～ '+e(period.statement_on)+'</small>'+
