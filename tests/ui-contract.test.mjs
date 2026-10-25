@@ -448,3 +448,22 @@ test('credit card payments record a fixed monthly period without creating anothe
   assert.match(storage, /UNIQUE KEY household_card_statement/);
   assert.match(calendar, /class WFF_Card_Cycles/);
 });
+
+test('ledger note search uses server-side household-scoped LIKE and preserves pagination',()=>{
+  const api = readFileSync('includes/class-wff-api.php','utf8');
+  assert.match(api,/t\\.note LIKE %s/);
+  assert.match(api,/esc_like\\(\\$keyword\\)/);
+  assert.match(api,/['"]search['"] => \\$r->get_param\\(['"]search['"]\\)/);
+  assert.match(js,/id="wff-note-search-form"/);
+  assert.match(js,/encodeURIComponent\\(S.noteSearch\\)/);
+});
+test('loan edits store amount revisions without rewriting old paid ledger rows',()=>{
+  const loan = readFileSync('includes/class-wff-loans.php','utf8');
+  const storage = readFileSync('includes/class-wff-storage.php','utf8');
+  assert.match(storage,/CREATE TABLE \\$loan_amount_changes/);
+  assert.match(loan,/amount_for_installment/);
+  assert.match(loan,/amount_change_from/);
+  assert.match(loan,/payment_status='unpaid'/);
+  assert.match(loan,/effective_no<= \\$paid_max/);
+  assert.match(js,/name="amount_change_from" type="month"/);
+});
