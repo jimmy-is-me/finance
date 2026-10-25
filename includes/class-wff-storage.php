@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 final class WFF_Storage {
     public static function table($name) {
         global $wpdb;
-        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','receipts','subscriptions','card_payments');
+        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','loan_amount_changes','receipts','subscriptions','card_payments');
         if (!in_array($name, $allowed, true)) { return ''; }
         return $wpdb->prefix . 'wff_' . $name;
     }
@@ -23,6 +23,7 @@ final class WFF_Storage {
         $log = self::table('activity');
         $loans = self::table('loans');
         $loan_payments = self::table('loan_payments');
+        $loan_amount_changes = self::table('loan_amount_changes');
         $receipts = self::table('receipts');
 
         dbDelta("CREATE TABLE $h (
@@ -168,6 +169,19 @@ final class WFF_Storage {
             updated_at datetime NOT NULL,
             PRIMARY KEY  (id),
             KEY household_status (household_id,status)
+        ) $c;");
+        // Historical monthly loan increases: amount applies from its
+        // installment onward; older paid installments keep their original terms.
+        dbDelta("CREATE TABLE $loan_amount_changes (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            household_id bigint(20) unsigned NOT NULL,
+            loan_id bigint(20) unsigned NOT NULL,
+            installment_no int(11) unsigned NOT NULL,
+            monthly_payment decimal(15,2) NOT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY loan_installment (loan_id,installment_no),
+            KEY household_loan (household_id,loan_id)
         ) $c;");
         dbDelta("CREATE TABLE $loan_payments (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

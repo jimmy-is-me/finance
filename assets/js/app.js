@@ -12,7 +12,7 @@
   ];
   const S = {
     view: 'dashboard', accountTab:'all', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
-    scope: 'all', kind: 'all', page: 1, households: [], hid: 0, meta: null,
+    scope: 'all', kind: 'all', noteSearch: '', page: 1, households: [], hid: 0, meta: null,
     dashboard: null, transactions: null, subscriptions: null, loans: null, cardPayments:null, loanExpanded: {}, loanScope:'all', loanWindowOffset:0, activities: [], modal: null,
     draft: {}, busy: false, nav: false, notice: '', authError: '', loginDraft: '', invitationError: '', csv: '', csvName: '',
     importYear: new Date().getFullYear(), importPreview: null, invitation: null,
@@ -67,7 +67,7 @@
   async function reload() {
     if (!S.hid) { render(); return; }
     // Complete due-item generation before reading totals and newly created categories.
-    const transactions=await request(path('transactions?month='+encodeURIComponent(S.month)+'&scope='+e(S.scope)+'&kind='+e(S.kind)+'&page='+S.page+'&per_page=25'));
+    const transactions=await request(path('transactions?month='+encodeURIComponent(S.month)+'&scope='+e(S.scope)+'&kind='+e(S.kind)+'&page='+S.page+'&per_page=25&search='+encodeURIComponent(S.noteSearch)));
     const [meta,dashboard,cardPayments]=await Promise.all([request(path('meta')),request(path('dashboard?month='+encodeURIComponent(S.month))),request(path('card-payments'))]);
     S.meta=meta; S.dashboard=dashboard; S.transactions=transactions; S.cardPayments=cardPayments;
     if (S.view === 'activity') S.activities=await request(path('activity'));
@@ -463,12 +463,18 @@
   function transactions() {
     const d=S.transactions || {items:[],page:1,pages:1,total:0};
     return '<div class="wff-pagehead"><div><div class="wff-kicker">LEDGER / 每筆都清楚</div><h1>收支 <span class="wff-highlight">紀錄</span></h1>'+
-      '<p>家庭與公司分別分類，支援月份及類型篩選。</p></div>'+periodPicker()+'</div>'+
+      '<p>家庭與公司分別分類，支援月份、類型及備註文字搜尋。</p></div>'+periodPicker()+'</div>'+
       '<section class="wff-panel"><div class="wff-toolbar">'+
       '<label>收支空間<select id="wff-scope"><option value="all">全部</option>'+
         '<option value="family" '+(S.scope==='family'?'selected':'')+'>家庭</option><option value="business" '+(S.scope==='business'?'selected':'')+'>公司</option></select></label>'+
       '<label>類型<select id="wff-kind">'+[['all','全部'],['income','收入'],['expense','支出'],['transfer','轉帳']].map(x=>
         '<option value="'+x[0]+'" '+(S.kind===x[0]?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></label>'+
+      '<form class="wff-note-search" id="wff-note-search-form" role="search">'+
+      '<label for="wff-note-search">備註搜尋</label>'+
+      '<input id="wff-note-search" name="search" type="search" maxlength="100" placeholder="輸入備註關鍵字，例如卡費、好市多" value="'+e(S.noteSearch)+'">'+
+      '<button class="wff-button" type="submit">搜尋</button>'+
+      (S.noteSearch?'<button class="wff-textbtn" type="button" data-action="clear-note-search">清除</button>':'')+
+      '</form>'+
       (canEdit()?simpleBtn('＋ 新增一筆','new-transaction','wff-primary'):'')+'</div>'+
       '<div class="wff-list-count">共 '+e(d.total)+' 筆 · 每頁最多 25 筆</div>'+
       (d.items.length?'<div class="wff-tablewrap"><table class="wff-transactions"><thead><tr>'+
@@ -519,7 +525,8 @@
         e(accountLabel(a.type))+' / '+(Number(a.enabled)===0?'已停用':'使用中')+'</div>'+
         '<h2>'+e(a.name)+'</h2>'+
         (a.brand?'<div class="wff-tool-brand">'+e(a.brand)+'</div>':'')+
-        detail+(a.type==='credit'&&canEdit()&&period?'<button class="wff-button" type="button" data-action="card-payment" data-id="'+e(a.id)+'" data-statement="'+e(period.statement_on)+'">'+(period.payment?'修改本期繳費':'登記本期繳費')+'</button>':'')+
+        detail+(a.type==='credit'&&canEdit()&&period?'<button class="wff-button" type="button" data-action="card-payment" data-id="'+e(a.id)+'" data-statement="'+e(period.statement_on)+'">'+(period.payment?'✓ 本期已繳・修改紀錄':'✓ 登記本期已繳費')+'</button>':'')+
+        (a.type==='credit'&&canEdit()&&!period?'<button class="wff-button" type="button" data-action="edit-account" data-id="'+e(a.id)+'">設定固定出帳日／繳款日</button>':'')+
         (a.type==='credit'&&period?'<button class="wff-textbtn wff-card-history-link" type="button" data-action="card-history" data-id="'+e(a.id)+'">查看最近 12 期繳費紀錄 ↗</button>':'')+
         (a.notes?'<p class="wff-small">'+e(a.notes)+'</p>':'')+
         (canEdit()?'<button class="wff-textbtn" data-action="edit-account" data-id="'+e(a.id)+'" type="button">編輯付款工具 ↗</button>':'')+
@@ -718,12 +725,14 @@
        '<div class="wff-note">到期會自動新增未繳費收支，管理員標記已繳後才計入支出；金額留白時先建立零元待繳，繳費時補上金額。過去日期會補登歷史月份，已有手動記帳請避免重複。</div>'+
        field('名稱','<input name="name" value="'+e(d.name||'')+'" maxlength="120" placeholder="例如：CX-5 車貸、房貸、信貸" required>')+
        '<div class="wff-form-grid">'+
-       field('每月預計金額（選填）','<input name="monthly_payment" type="number" step=".01" min="0" value="'+e(Number(d.monthly_payment)||'')+'" placeholder="不確定可先留白">')+
+       field(d.id?'調整後每月預計金額':'每月預計金額（選填）','<input name="monthly_payment" type="number" step=".01" min="0" value="'+e(Number(d.monthly_payment)||'')+'" placeholder="不確定可先留白">')+
        field('每月固定繳款日',dateControl('first_due_on',d.first_due_on||new Date().toLocaleDateString('sv-SE')))+'</div>'+
        '<div class="wff-form-grid">'+
        field('所屬帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+
        field('銀行／貸款機構（選填）','<input name="lender" value="'+e(d.lender||'')+'" maxlength="120" placeholder="例如：玉山銀行">')+'</div>'+
        field('備註（選填）','<input name="notes" maxlength="255" value="'+e(d.notes||'')+'" placeholder="例如：每月自動扣款">')+
+       (d.id&&d.tracking_mode==='simple'?field('新金額從哪個月份開始','<input name="amount_change_from" type="month" required value="'+e(d.amount_change_from||new Date().toLocaleDateString('sv-SE').slice(0,7))+'">')+
+       '<p class="wff-small">若貸款金額調漲，修改上方金額並選擇開始適用的月份；已繳期數及實際付款金額都不會被改動。未變更金額時無須調整這一欄。</p>':'')+
        field('追蹤狀態','<select name="status">'+selectValues([['active','持續追蹤'],['closed','停止追蹤']],d.status||'active')+'</select>')+
        (d.id && d.tracking_mode!=='simple'?'<div class="wff-note">舊版貸款的本金、年利率與期數資料會原樣保留，不需要重新填寫。如已有繳款，首次日期和部分金額不可修改。</div>':'')+
        '<button type="submit" class="wff-button wff-primary">儲存每月繳款 ✓</button></form>';
@@ -1135,6 +1144,7 @@
     if(act==='remove-member'&&confirm('確定移除這位家庭成員？')) {
       attempt(async()=>{await request(path('members/'+id),'DELETE');await reload();show('已移除成員');});
     }
+    if(act==='clear-note-search'){S.noteSearch='';S.page=1;attempt(reload);}
     if(act==='page-prev'&&S.page>1){S.page--;attempt(reload);}
     if(act==='page-next'&&S.page<S.transactions.pages){S.page++;attempt(reload);}
     if(act==='export'){attempt(exportCSV);}
@@ -1222,9 +1232,13 @@
       return;
     }
     const handled = ['wff-household-form','wff-signup','wff-transaction-form',
-      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-account-form','wff-card-payment-form','wff-invite-form','wff-import-form'];
+      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-account-form','wff-card-payment-form','wff-note-search-form','wff-invite-form','wff-import-form'];
     if(!handled.includes(form.id)) return;
     ev.preventDefault();
+    if(form.id==='wff-note-search-form'){
+      S.noteSearch=(getFormData(form).search||'').trim().slice(0,100);
+      S.page=1;attempt(reload);return;
+    }
     if(form.id==='wff-household-form'){
       attempt(async()=>{const result=await request('households','POST',getFormData(form));await getHouseholds(result.id);show('家庭財務空間建立完成');});
     }

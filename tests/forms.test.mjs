@@ -6,7 +6,7 @@ function app(){
  const listeners={},posts=[];
  const root={innerHTML:'',addEventListener:(event,handler)=>listeners[event]=handler,querySelector:()=>null};
  const ctx=vm.createContext({document:{getElementById:()=>root,createElement:()=>({setAttribute(){}}),addEventListener:()=>{},body:{appendChild(){},classList:{toggle(){}}}},window:{WFF_CONFIG:{user:{name:'Tester'},rest:'/',nonce:'test'},clearTimeout(){},setTimeout(){}},location:{search:''},URLSearchParams,URL,console,FormData:class{constructor(form){this.data=form.data;}entries(){return Object.entries(this.data);}},fetch:async(url,options)=>{posts.push({url,...options});return {ok:true,json:async()=>url.includes('transactions')?{items:[],total:0,page:1,pages:1}:url.includes('meta')?{role:'owner',categories:[],accounts:[]}:url.includes('dashboard')?{recent:[],cards:[]}:{items:[]}};}});
- let source=readFileSync('assets/js/app.js','utf8').replace('  start();','  window.api={S,modal,transactions,subscriptions,loans};');
+ let source=readFileSync('assets/js/app.js','utf8').replace('  start();','  window.api={S,modal,transactions,subscriptions,loans,accounts};');
  vm.runInContext(source,ctx);
  const {S}=ctx.window.api;
  Object.assign(S,{hid:1,view:'transactions',households:[{id:1,name:'Home'}],meta:{role:'owner',categories:[],accounts:[]},transactions:{items:[],total:0,page:1,pages:1},dashboard:{recent:[]}});
@@ -46,6 +46,34 @@ test('card paid marker sends only the date, amount, card and fixed statement cyc
   assert.equal(payload.paid_on,'2026-10-25');
   assert.equal(payload.amount,'3578');
   assert.equal(payload.kind,undefined,'must not create another transfer');
+});
+
+test('ledger note search combines filters, resets page, and queries server across pagination',async()=>{
+  const a=app();
+  a.api.S.page=4;
+  let prevented=false;
+  a.listeners.submit({target:{id:'wff-note-search-form',data:{search:'  卡費  '},classList:{contains:()=>false}},preventDefault(){prevented=true;}});
+  await new Promise(resolve=>setTimeout(resolve,12));
+  assert.equal(prevented,true);
+  assert.equal(a.api.S.noteSearch,'卡費');
+  assert.equal(a.api.S.page,1);
+  assert(a.posts.some(p=>p.url.includes('transactions?')&&p.url.includes('search=%E5%8D%A1%E8%B2%BB')),'Search must reach server');
+  assert.match(a.api.transactions(),/備註搜尋/);
+  assert.match(a.api.transactions(),/卡費/);
+});
+
+test('loan edit settings offer a future effective month and credit card setup is accessible',()=>{
+  const a=app();
+  a.api.S.modal='loan';
+  a.api.S.draft={id:5,tracking_mode:'simple',amount_change_from:'2026-11',first_due_on:'2026-10-10',monthly_payment:15000};
+  const html=a.api.modal();
+  assert.match(html,/name="amount_change_from" type="month"/);
+  assert.match(html,/value="2026-11"/);
+  assert.match(html,/已繳期數/);
+  a.api.S.meta.accounts=[{id:2,type:'credit',name:'新卡',enabled:1}];
+  a.api.S.cardPayments={cards:{2:{periods:[]}}};
+  const card=a.api.accounts();
+  assert.match(card,/設定固定出帳日／繳款日/);
 });
 
 test('unpaid subscription has explicit state and owner payment action',()=>{
