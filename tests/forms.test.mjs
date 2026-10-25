@@ -27,18 +27,41 @@ test('new transaction form follows requested order and accepts integer steps',()
  assert.deepEqual(names,['scope','kind','occurred_on','amount','note','category_id','payment_method','account_id','statement_on','payment_due_on','receipt']);
  assert.match(html,/name="amount" type="number" step="1"/);
 });
+test('card paid marker sends only the date, amount, card and fixed statement cycle',async()=>{
+  const a=app();
+  a.api.S.modal='card-payment';
+  a.api.S.draft={card_id:4,period:{starts_on:'2026-09-26',statement_on:'2026-10-25',due_on:'2026-11-15'}};
+  a.api.S.meta.accounts=[{id:4,type:'credit',name:'信用卡'}];
+  assert.match(a.api.modal(),/實際繳費日期/);
+  assert.match(a.api.modal(),/實際繳費金額/);
+  let prevented=false;
+  a.listeners.submit({target:{id:'wff-card-payment-form',data:{paid_on:'2026-10-25',amount:'3578'},classList:{contains:()=>false}},preventDefault(){prevented=true;}});
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(prevented,true);
+  const paid=a.posts.find(x=>x.url==='/households/1/card-payments'&&x.method==='POST');
+  assert.ok(paid,'card payment form must POST the dedicated endpoint');
+  const payload=JSON.parse(paid.body);
+  assert.equal(payload.statement_on,'2026-10-25');
+  assert.equal(payload.account_id,4);
+  assert.equal(payload.paid_on,'2026-10-25');
+  assert.equal(payload.amount,'3578');
+  assert.equal(payload.kind,undefined,'must not create another transfer');
+});
+
 test('unpaid subscription has explicit state and owner payment action',()=>{
  const a=app();a.api.S.transactions.items=[{id:7,occurred_on:'2026-10-18',kind:'expense',scope:'family',subscription_id:1,payment_status:'unpaid',amount:390,note:'Netflix'}];
  const html=a.api.transactions();assert.match(html,/未繳費/);assert.match(html,/subscription-paid/);
  a.api.S.meta.role='viewer';assert.doesNotMatch(a.api.transactions(),/subscription-paid/);
 });
 
-test('subscription actions expose copy and stopped-only deletion, while cards expose repayment',()=>{
+test('subscription actions retain history and card repayments use the new billing-cycle workflow',()=>{
  const source=readFileSync('assets/js/app.js','utf8');
  assert.match(source,/copy-subscription/);
  assert.match(source,/!Number\(x.active\)\?'<button[^']+delete-subscription/);
  assert.match(source,/歷史收支紀錄會保留/);
- assert.match(source,/destination_account_id:id,payment_method:'bank'/);
+ assert.match(source,/data-action="card-payment"/);
+ assert.match(source,/wff-card-payment-form/);
+ assert.doesNotMatch(source,/data-action="repay-card"/);
  const a=app();a.api.S.modal='transaction';a.api.S.draft={kind:'transfer',destination_account_id:4};
  const html=a.api.modal();assert.match(html,/帳單出帳日期/);assert.match(html,/帳單繳款期限/);
  assert.doesNotMatch(html, /class="wff-bill-dates" hidden/);

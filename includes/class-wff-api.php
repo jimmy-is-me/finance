@@ -24,6 +24,9 @@ final class WFF_API {
         self::route('/households/(?P<hid>\d+)/categories/(?P<id>\d+)', 'DELETE', 'delete_category', $a);
         self::route('/households/(?P<hid>\d+)/accounts', 'POST', 'save_account', $a);
         self::route('/households/(?P<hid>\d+)/accounts/(?P<id>\d+)', 'PUT', 'save_account', $a);
+        self::route('/households/(?P<hid>\d+)/card-payments', 'GET', 'card_payments', $a);
+        self::route('/households/(?P<hid>\d+)/card-payments', 'POST', 'save_card_payment', $a);
+        self::route('/households/(?P<hid>\d+)/card-payments/(?P<id>\d+)', 'DELETE', 'delete_card_payment', $a);
         self::route('/households/(?P<hid>\d+)/members/(?P<id>\d+)', 'PATCH', 'change_member', $a);
         self::route('/households/(?P<hid>\d+)/members/(?P<id>\d+)', 'DELETE', 'change_member', $a);
         self::route('/households/(?P<hid>\d+)/invite', 'POST', 'invite', $a);
@@ -550,6 +553,20 @@ final class WFF_API {
                 }
             }
         }
+        if ($type==='credit' && (!$statement || !$due)) {
+            return self::error('信用卡請設定固定結帳日與固定繳款日');
+        }
+        if ($original && $original['type']==='credit') {
+            $payments = WFF_Storage::table('card_payments');
+            $has_history = (int)$wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $payments WHERE household_id=%d AND account_id=%d", $hid, $id
+            ));
+            if ($has_history && ($type!=='credit' ||
+                (int)$original['statement_day'] !== (int)$statement ||
+                (int)$original['due_day'] !== (int)$due)) {
+                return self::error('已有歷史繳費紀錄，固定結帳日／繳款日或工具類型不可直接變更，以免帳期錯置；如確需更動，請先確認或取消既有繳費紀錄');
+            }
+        }
         $funding = null;
         if ($type==='mobile') {
             $funding = (int)$r->get_param('funding_account_id') ?: null;
@@ -579,6 +596,114 @@ final class WFF_API {
         if ($ok===false) { return self::error('儲存付款工具失敗',500); }
         WFF_Storage::activity($hid,'save_payment_tool',$id);
         return array('saved'=>true,'id'=>$id);
+    }
+
+    /**
+     * Status belongs to a particular statement cycle, never the estimated
+     * card balance. Read access is shared with other household resources.
+     */
+    public static function card_payments($r) {
+        global $wpdb;
+        $hid = (int)$r['hid'];
+        $role = self::role($hid);
+        if (is_wp_error($role)) { return $role; }
+        $accounts = WFF_Storage::table('accounts');
+        $payments = WFF_Storage::table('card_payments');
+        $cards = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, statement_day, due_day FROM $accounts WHERE household_id=%d AND type='credit'",
+            $hid
+        ), ARRAY_A);
+        $today = wp_date('Y-m-d');
+        $earliest = (new DateTimeImmutable($today))->modify('-26 months')->format('Y-m-d');
+        $saved = $wpdb->get_results($wpdb->prepare(
+            "SELECT id,account_id,statement_on,due_on,paid_on,amount FROM $payments
+             WHERE household_id=%d AND statement_on >= %s ORDER BY statement_on DESC",
+            $hid, $earliest
+        ), ARRAY_A);
+        $by_card = array();
+        foreach ($saved ?: array() as $item) {
+            $by_card[(int)$item['account_id']][$item['statement_on']] = array(
+                'id'=>(int)$item['id'],
+                'paid_on'=>$item['paid_on'],
+                'amount'=>(float)$item['amount'],
+            );
+        }
+        $out = array();
+        foreach ($cards ?: array() as $card) {
+            $id = (int)$card['id'];
+            $configured = !empty($card['statement_day']) && !empty($card['due_day']);
+            $periods = array();
+            if ($configured) {
+                foreach (WFF_Card_Cycles::periods((int)$card['statement_day'], (int)$card['due_day'], $today, 12) as $period) {
+                    $payment = $by_card[$id][$period['statement_on']] ?? null;
+                    $period['payment'] = $payment;
+                    $period['status'] = $payment ? 'paid' : ($today > $period['due_on'] ? 'overdue' : 'pending');
+                    $periods[] = $period;
+                }
+            }
+            $out[$id] = array('configured'=>$configured, 'periods'=>$periods);
+        }
+        return array('cards'=>$out, 'today'=>$today);
+    }
+
+    /** The only user inputs are the cycle, actual paid date and paid amount. */
+    public static function save_card_payment($r) {
+        global $wpdb;
+        $hid = (int)$r['hid'];
+        $role = self::role($hid, 'editor');
+        if (is_wp_error($role)) { return $role; }
+        $card_id = (int)$r->get_param('account_id');
+        $accounts = WFF_Storage::table('accounts');
+        $card = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, statement_day, due_day FROM $accounts
+             WHERE household_id=%d AND id=%d AND type='credit'",
+            $hid, $card_id
+        ), ARRAY_A);
+        if (!$card) { return self::error('找不到這張家庭信用卡', 404); }
+        if (empty($card['statement_day']) || empty($card['due_day'])) {
+            return self::error('請先設定信用卡每月固定結帳日與繳款日');
+        }
+        $statement = self::date($r->get_param('statement_on'));
+        $paid_on = self::date($r->get_param('paid_on'));
+        $amount = self::amount($r->get_param('amount'));
+        $today = wp_date('Y-m-d');
+        if (!$statement || !$paid_on || !$amount) {
+            return self::error('請填寫正確的帳期、實際繳費日期與金額');
+        }
+        if ($paid_on > $today) { return self::error('實際繳費日期不能晚於今天'); }
+        $cycle = null;
+        foreach (WFF_Card_Cycles::periods((int)$card['statement_day'], (int)$card['due_day'], $today, 24) as $item) {
+            if ($item['statement_on'] === $statement) { $cycle = $item; break; }
+        }
+        if (!$cycle) { return self::error('帳期與固定結帳日不符，或超過可登記的歷史範圍'); }
+        $payments = WFF_Storage::table('card_payments');
+        $now = current_time('mysql', true);
+        // Atomic UPSERT: one paid marker per card + statement close date.
+        // This deliberately never inserts transfer/expense records.
+        $ok = $wpdb->query($wpdb->prepare(
+            "INSERT INTO $payments (household_id,account_id,statement_on,due_on,paid_on,amount,created_by,created_at,updated_at)
+             VALUES (%d,%d,%s,%s,%s,%s,%d,%s,%s)
+             ON DUPLICATE KEY UPDATE due_on=VALUES(due_on),paid_on=VALUES(paid_on),
+             amount=VALUES(amount),updated_at=VALUES(updated_at)",
+            $hid, $card_id, $statement, $cycle['due_on'], $paid_on,
+            $amount, get_current_user_id(), $now, $now
+        ));
+        if ($ok === false) { return self::error('信用卡繳費紀錄儲存失敗',500); }
+        WFF_Storage::activity($hid, 'save_card_payment', $card_id, $statement);
+        return array('saved'=>true);
+    }
+
+    public static function delete_card_payment($r) {
+        global $wpdb;
+        $hid = (int)$r['hid'];
+        $role = self::role($hid, 'editor');
+        if (is_wp_error($role)) { return $role; }
+        $id = (int)$r['id'];
+        $table = WFF_Storage::table('card_payments');
+        $deleted = $wpdb->delete($table, array('id'=>$id, 'household_id'=>$hid));
+        if (!$deleted) { return self::error('找不到信用卡繳費紀錄',404); }
+        WFF_Storage::activity($hid, 'delete_card_payment', $id);
+        return array('deleted'=>true);
     }
 
     public static function dashboard($r) {

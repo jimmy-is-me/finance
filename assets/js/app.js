@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.2.3 — payment tools and interactive analytics */
+/* WUMETAX Finance v1.5.4 — fixed-cycle credit card payment status */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -13,7 +13,7 @@
   const S = {
     view: 'dashboard', accountTab:'all', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
     scope: 'all', kind: 'all', page: 1, households: [], hid: 0, meta: null,
-    dashboard: null, transactions: null, subscriptions: null, loans: null, loanExpanded: {}, loanScope:'all', loanWindowOffset:0, activities: [], modal: null,
+    dashboard: null, transactions: null, subscriptions: null, loans: null, cardPayments:null, loanExpanded: {}, loanScope:'all', loanWindowOffset:0, activities: [], modal: null,
     draft: {}, busy: false, nav: false, notice: '', authError: '', loginDraft: '', invitationError: '', csv: '', csvName: '',
     importYear: new Date().getFullYear(), importPreview: null, invitation: null,
   };
@@ -68,8 +68,8 @@
     if (!S.hid) { render(); return; }
     // Complete due-item generation before reading totals and newly created categories.
     const transactions=await request(path('transactions?month='+encodeURIComponent(S.month)+'&scope='+e(S.scope)+'&kind='+e(S.kind)+'&page='+S.page+'&per_page=25'));
-    const [meta,dashboard]=await Promise.all([request(path('meta')),request(path('dashboard?month='+encodeURIComponent(S.month)))]);
-    S.meta=meta; S.dashboard=dashboard; S.transactions=transactions;
+    const [meta,dashboard,cardPayments]=await Promise.all([request(path('meta')),request(path('dashboard?month='+encodeURIComponent(S.month))),request(path('card-payments'))]);
+    S.meta=meta; S.dashboard=dashboard; S.transactions=transactions; S.cardPayments=cardPayments;
     if (S.view === 'activity') S.activities=await request(path('activity'));
     if (S.view === 'subscriptions') S.subscriptions=await request(path('subscriptions'));
     if (S.view === 'loans') S.loans=await request(path('loans?offset='+S.loanWindowOffset));
@@ -495,18 +495,23 @@
     return (S.meta?.accounts||[]).filter(a=>(!type||a.type===type)&&Number(a.enabled)!==0);
   }
   function accounts() {
-    const all=S.meta.accounts||[],cards=S.dashboard?.cards||[];
+    const all=S.meta.accounts||[];
     const selected=S.accountTab||'all';
     const filtered=all.filter(a=>selected==='all'||a.type===selected);
     const tabs=toolTypes.map(([id,label])=>'<button type="button" class="wff-tool-tab '+(selected===id?'active':'')+
       '" data-action="tool-tab" data-tab="'+id+'">'+label+'<small>'+all.filter(a=>id==='all'||a.type===id).length+'</small></button>').join('');
     const cardsHtml=filtered.map(a=>{
-      const outstanding=cards.find(x=>Number(x.id)===Number(a.id));
       const funding=all.find(x=>Number(x.id)===Number(a.funding_account_id));
+      const period=S.cardPayments?.cards?.[a.id]?.periods?.[0];
       const detail=a.type==='credit' ?
-       '<div class="wff-account-details"><span>出帳／結帳日　'+(a.statement_day?'每月 '+e(a.statement_day)+' 日':'未設定')+'</span>'+
-       '<span>繳款日　'+(a.due_day?'每月 '+e(a.due_day)+' 日':'未設定')+'</span>'+
-       '<span>已記錄未清償淨額 '+money(outstanding?.outstanding||0)+'</span></div>' :
+       '<div class="wff-account-details"><span>固定出帳日　'+(a.statement_day?'每月 '+e(a.statement_day)+' 日':'未設定')+'</span>'+
+       '<span>固定繳款日　'+(a.due_day?'每月 '+e(a.due_day)+' 日':'未設定')+'</span>'+
+       (period?'<span>本期帳單　'+e(period.starts_on)+' ～ '+e(period.statement_on)+'</span>'+
+         '<span>繳款期限　'+e(period.due_on)+'</span>'+
+         '<strong class="wff-card-paid-state" data-status="'+e(period.status)+'">'+
+           (period.payment?'本期已繳 '+money(period.payment.amount)+' · '+e(period.payment.paid_on):
+             (period.status==='overdue'?'本期尚未登記繳費（已過期限）':'本期尚未登記繳費'))+'</strong>':
+         '<span>設定固定出帳與繳款日後，即可逐期記錄是否已繳</span>')+'</div>' :
        a.type==='mobile' ?
        '<div class="wff-account-details"><span>預設扣款　'+e(funding?.name||'未指定')+'</span></div>' :
        '<div class="wff-account-details"><span>付款工具已建立，可於記帳時選取</span></div>';
@@ -514,7 +519,9 @@
         e(accountLabel(a.type))+' / '+(Number(a.enabled)===0?'已停用':'使用中')+'</div>'+
         '<h2>'+e(a.name)+'</h2>'+
         (a.brand?'<div class="wff-tool-brand">'+e(a.brand)+'</div>':'')+
-        detail+(a.type==='credit'&&canEdit()?'<button class="wff-button" type="button" data-action="repay-card" data-id="'+e(a.id)+'">登記清償</button>':'')+(a.notes?'<p class="wff-small">'+e(a.notes)+'</p>':'')+
+        detail+(a.type==='credit'&&canEdit()&&period?'<button class="wff-button" type="button" data-action="card-payment" data-id="'+e(a.id)+'" data-statement="'+e(period.statement_on)+'">'+(period.payment?'修改本期繳費':'登記本期繳費')+'</button>':'')+
+        (a.type==='credit'&&period?'<button class="wff-textbtn wff-card-history-link" type="button" data-action="card-history" data-id="'+e(a.id)+'">查看最近 12 期繳費紀錄 ↗</button>':'')+
+        (a.notes?'<p class="wff-small">'+e(a.notes)+'</p>':'')+
         (canEdit()?'<button class="wff-textbtn" data-action="edit-account" data-id="'+e(a.id)+'" type="button">編輯付款工具 ↗</button>':'')+
         '</article>';
     }).join('');
@@ -524,7 +531,7 @@
       (canEdit()?simpleBtn('＋ 新增付款工具','new-account','wff-primary'):'')+'</div>'+
       '<div class="wff-tool-tabs" role="group" aria-label="篩選付款工具">'+tabs+'</div>'+
       '<div class="wff-account-grid">'+(cardsHtml||'<div class="wff-chart-empty">尚無此類付款工具，請點右上角新增。</div>')+'</div>'+
-      '<div class="wff-note">行動支付是付款「通路」，可綁定現金、銀行或信用卡作為扣款來源。透過行動支付刷卡時仍只記一次支出；信用卡未清償金額為依已登錄交易推算，非銀行正式帳單。</div>';
+      '<div class="wff-note">行動支付刷卡仍只記一次支出。信用卡「本期已繳」只根據此處登記的實際繳費日期與金額判斷，不會新增第二筆支出或修改原有轉帳記帳；歷史轉帳也不會自動視為已繳。</div>';
   }
   function categories() {
     const cats=S.meta.categories||[];
@@ -757,13 +764,39 @@
         field('顯示排序','<input name="sort_order" type="number" min="0" max="100000" value="'+e(d.sort_order||0)+'">')+
         '</div>'+
         (kind==='credit'?'<div class="wff-form-grid">'+
-          field('每月結帳日','<input name="statement_day" type="number" min="1" max="31" value="'+e(d.statement_day||'')+'" placeholder="1–31，選填">')+
-          field('每月繳款日','<input name="due_day" type="number" min="1" max="31" value="'+e(d.due_day||'')+'" placeholder="1–31，選填">')+
-          '</div>':'')+
+          field('每月固定結帳日','<input name="statement_day" type="number" min="1" max="31" required value="'+e(d.statement_day||'')+'" placeholder="1–31">')+
+          field('每月固定繳款日','<input name="due_day" type="number" min="1" max="31" required value="'+e(d.due_day||'')+'" placeholder="1–31">')+
+          '</div><p class="wff-small">每月自動依固定日期推算帳期；如果繳款日早於或等於結帳日，會排到下個月。29～31 日遇短月取當月最後一天。</p>':'')+
         (kind==='mobile'?field('預設扣款來源','<select name="funding_account_id">'+options(sources,d.funding_account_id,'不指定，每次記帳時選擇')+'</select>'):'')+
         field('備註','<input name="notes" maxlength="255" value="'+e(d.notes||'')+'" placeholder="選填">')+
         '<label class="wff-checkline"><input type="checkbox" name="enabled" value="1" '+(Number(d.enabled)===0?'':'checked')+'> 啟用此付款工具</label>'+
         '<button class="wff-button wff-primary" type="submit">儲存付款工具 ✓</button></form>';
+    } else if(type==='card-payment'){
+      const card=(S.meta?.accounts||[]).find(a=>Number(a.id)===Number(d.card_id));
+      const period=d.period||{},payment=period.payment;
+      title=(payment?'修改':'登記')+'信用卡繳費';
+      body='<div class="wff-note"><strong>'+e(card?.name||'信用卡')+'</strong>'+
+        '<div>本期消費帳期：'+e(period.starts_on)+' ～ '+e(period.statement_on)+'</div>'+
+        '<div>預定繳款日：'+e(period.due_on)+'</div>'+
+        '<div>只登記這一期是否已繳，不會新增收支、轉帳，也不會重複扣除信用卡費。</div></div>'+
+        '<form class="wff-form" id="wff-card-payment-form"><div class="wff-form-grid">'+
+        field('實際繳費日期',dateControl('paid_on',payment?.paid_on||S.cardPayments?.today||new Date().toLocaleDateString('sv-SE')))+
+        field('實際繳費金額（NT$）','<input name="amount" type="number" step=".01" min=".01" required inputmode="decimal" value="'+e(payment?.amount||'')+'" placeholder="輸入本次繳費金額">')+
+        '</div><button type="submit" class="wff-button wff-primary">確認本期已繳 ✓</button></form>'+
+        (payment&&canEdit()?'<button type="button" class="wff-textbtn" data-action="delete-card-payment" data-id="'+e(payment.id)+'">取消本期已繳紀錄</button>':'');
+    } else if(type==='card-history'){
+      const card=(S.meta?.accounts||[]).find(a=>Number(a.id)===Number(d.card_id));
+      const periods=S.cardPayments?.cards?.[d.card_id]?.periods||[];
+      title=(card?.name||'信用卡')+' · 最近 12 期';
+      body='<div class="wff-card-history">'+periods.map(period=>
+        '<div class="wff-card-history-row"><div><strong>'+e(period.statement_on)+' 結帳</strong>'+
+        '<small>帳期 '+e(period.starts_on)+' ～ '+e(period.statement_on)+'</small>'+
+        '<small>繳款期限 '+e(period.due_on)+'</small>'+
+        '<span class="wff-card-paid-state" data-status="'+e(period.status)+'">'+
+        (period.payment?'已繳 '+money(period.payment.amount)+' · '+e(period.payment.paid_on):
+         (period.status==='overdue'?'尚未登記（已過期限）':'尚未登記'))+'</span></div>'+
+        (canEdit()?'<button class="wff-button" type="button" data-action="card-payment" data-id="'+e(d.card_id)+'" data-statement="'+e(period.statement_on)+'">'+(period.payment?'修改':'登記繳費')+'</button>':'')+
+        '</div>').join('')+'</div>';
     } else if(type==='invite'){
       title='邀請家庭成員';
       body='<div class="wff-note">受邀者加入後可共同查看家庭與公司收支。編輯者可修改資料，唯讀者只能查看。</div>'+
@@ -1019,9 +1052,19 @@
       const item=S.subscriptions?.items.find(x=>Number(x.id)===id);
       if(item)openModal('subscription',{...item.settings,name:item.settings.name+'（副本）',start_on:new Date().toLocaleDateString('sv-SE'),end_on:'',active:1});
     }
-    if(act==='repay-card'){
-      const card=S.meta.accounts.find(x=>Number(x.id)===id);
-      if(card)openModal('transaction',{kind:'transfer',scope:'family',destination_account_id:id,payment_method:'bank',note:card.name+' 卡費清償'});
+    if(act==='card-payment'){
+      const statement=target.dataset.statement;
+      const period=S.cardPayments?.cards?.[id]?.periods?.find(p=>p.statement_on===statement);
+      if(period&&canEdit())openModal('card-payment',{card_id:id,period});
+    }
+    if(act==='card-history'){
+      if(S.cardPayments?.cards?.[id]?.periods?.length)openModal('card-history',{card_id:id});
+    }
+    if(act==='delete-card-payment'&&canEdit()&&confirm('確定要取消這期「已繳」的標記嗎？此操作只刪除繳費紀錄，不影響其他記帳。')){
+      attempt(async()=>{
+        await request(path('card-payments/'+id),'DELETE');
+        resetModal();await reload();show('已取消本期已繳紀錄');
+      });
     }
     if(act==='new-subscription')openModal('subscription',{scope:'family',unit:'month',interval:1,active:1});
     if(act==='edit-subscription'){
@@ -1179,7 +1222,7 @@
       return;
     }
     const handled = ['wff-household-form','wff-signup','wff-transaction-form',
-      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-account-form','wff-invite-form','wff-import-form'];
+      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-account-form','wff-card-payment-form','wff-invite-form','wff-import-form'];
     if(!handled.includes(form.id)) return;
     ev.preventDefault();
     if(form.id==='wff-household-form'){
@@ -1234,6 +1277,17 @@
     if(form.id==='wff-category-form'){
       attempt(async()=>{const id=S.draft.id;await request(path('categories'+(id?'/'+id:'')),id?'PUT':'POST',getFormData(form));
         resetModal();await reload();show('分類儲存成功');});
+    }
+    if(form.id==='wff-card-payment-form'){
+      attempt(async()=>{
+        const period=S.draft.period;
+        if(!period||!S.draft.card_id)throw new Error('找不到信用卡帳期，請重新開啟');
+        await request(path('card-payments'),'POST',{
+          account_id:S.draft.card_id,statement_on:period.statement_on,
+          ...getFormData(form)
+        });
+        resetModal();await reload();show('本期信用卡已登記繳費');
+      });
     }
     if(form.id==='wff-account-form'){
       attempt(async()=>{const id=S.draft.id;const accountData=getFormData(form);accountData.enabled=form.querySelector('[name="enabled"]').checked?1:0;await request(path('accounts'+(id?'/'+id:'')),id?'PUT':'POST',accountData);

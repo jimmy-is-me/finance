@@ -27,7 +27,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.4.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.5.3'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.5.4'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -432,4 +432,19 @@ test('1.3.2 encrypted receipt fallback never persists readable image bytes benea
   assert.match(store, /add_option\('wff_receipt_aes256_key'/);
   assert.match(store, /glob\(\$dir \. '\/\*\.enc'\)/);
   assert.match(store, /getimagesizefromstring/);
+});
+
+test('credit card payments record a fixed monthly period without creating another transaction', () => {
+  assert.match(js, /cardPayments=cardPayments/);
+  assert.match(js, /data-action="card-payment"/);
+  assert.match(js, /wff-card-payment-form/);
+  assert.match(js, /card-payments/);
+  assert.doesNotMatch(js, /data-action="repay-card"/);
+  const api = readFileSync('includes/class-wff-api.php', 'utf8');
+  const storage = readFileSync('includes/class-wff-storage.php', 'utf8');
+  const calendar = readFileSync('includes/class-wff-card-cycles.php', 'utf8');
+  assert.match(api, /function save_card_payment/);
+  assert.match(api, /ON DUPLICATE KEY UPDATE/);
+  assert.match(storage, /UNIQUE KEY household_card_statement/);
+  assert.match(calendar, /class WFF_Card_Cycles/);
 });

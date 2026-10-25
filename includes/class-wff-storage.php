@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 final class WFF_Storage {
     public static function table($name) {
         global $wpdb;
-        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','receipts','subscriptions');
+        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','receipts','subscriptions','card_payments');
         if (!in_array($name, $allowed, true)) { return ''; }
         return $wpdb->prefix . 'wff_' . $name;
     }
@@ -19,6 +19,7 @@ final class WFF_Storage {
         $cat = self::table('categories');
         $a = self::table('accounts');
         $t = self::table('transactions');
+        $card_payments = self::table('card_payments');
         $log = self::table('activity');
         $loans = self::table('loans');
         $loan_payments = self::table('loan_payments');
@@ -85,6 +86,24 @@ final class WFF_Storage {
             created_at datetime NOT NULL,
             PRIMARY KEY  (id),
             KEY household_id (household_id)
+        ) $c;");
+        // Each card / closing date has one independently editable paid marker.
+        // These records NEVER generate expense or transfer transactions.
+        dbDelta("CREATE TABLE $card_payments (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            household_id bigint(20) unsigned NOT NULL,
+            account_id bigint(20) unsigned NOT NULL,
+            statement_on date NOT NULL,
+            due_on date NOT NULL,
+            paid_on date NOT NULL,
+            amount decimal(14,2) NOT NULL,
+            created_by bigint(20) unsigned NOT NULL,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY household_card_statement (household_id,account_id,statement_on),
+            KEY household_account (household_id,account_id),
+            KEY household_paid_on (household_id,paid_on)
         ) $c;");
         dbDelta("CREATE TABLE $t (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
