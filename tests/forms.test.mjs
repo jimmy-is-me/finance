@@ -6,7 +6,7 @@ function app(){
  const listeners={},posts=[];
  const root={innerHTML:'',addEventListener:(event,handler)=>listeners[event]=handler,querySelector:()=>null};
  const ctx=vm.createContext({document:{getElementById:()=>root,createElement:()=>({setAttribute(){}}),addEventListener:()=>{},body:{appendChild(){},classList:{toggle(){}}}},window:{WFF_CONFIG:{user:{name:'Tester'},rest:'/',nonce:'test'},clearTimeout(){},setTimeout(){}},location:{search:''},URLSearchParams,URL,console,FormData:class{constructor(form){this.data=form.data;}entries(){return Object.entries(this.data);}},fetch:async(url,options)=>{posts.push({url,...options});return {ok:true,json:async()=>url.includes('transactions')?{items:[],total:0,page:1,pages:1}:url.includes('meta')?{role:'owner',categories:[],accounts:[]}:url.includes('dashboard')?{recent:[],cards:[]}:{items:[]}};}});
- let source=readFileSync('assets/js/app.js','utf8').replace('  start();','  window.api={S,modal,transactions,subscriptions,loans};');
+ let source=readFileSync('assets/js/app.js','utf8').replace('  start();','  window.api={S,modal,transactions,subscriptions,loans,accounts};');
  vm.runInContext(source,ctx);
  const {S}=ctx.window.api;
  Object.assign(S,{hid:1,view:'transactions',households:[{id:1,name:'Home'}],meta:{role:'owner',categories:[],accounts:[]},transactions:{items:[],total:0,page:1,pages:1},dashboard:{recent:[]}});
