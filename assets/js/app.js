@@ -771,6 +771,32 @@
         field('備註','<input name="notes" maxlength="255" value="'+e(d.notes||'')+'" placeholder="選填">')+
         '<label class="wff-checkline"><input type="checkbox" name="enabled" value="1" '+(Number(d.enabled)===0?'':'checked')+'> 啟用此付款工具</label>'+
         '<button class="wff-button wff-primary" type="submit">儲存付款工具 ✓</button></form>';
+    } else if(type==='card-payment'){
+      const card=(S.meta?.accounts||[]).find(a=>Number(a.id)===Number(d.card_id));
+      const period=d.period||{},payment=period.payment;
+      title=(payment?'修改':'登記')+'信用卡繳費';
+      body='<div class="wff-note"><strong>'+e(card?.name||'信用卡')+'</strong>'+
+        '<div>本期消費帳期：'+e(period.starts_on)+' ～ '+e(period.statement_on)+'</div>'+
+        '<div>預定繳款日：'+e(period.due_on)+'</div>'+
+        '<div>只登記這一期是否已繳，不會新增收支、轉帳，也不會重複扣除信用卡費。</div></div>'+
+        '<form class="wff-form" id="wff-card-payment-form"><div class="wff-form-grid">'+
+        field('實際繳費日期',dateControl('paid_on',payment?.paid_on||S.cardPayments?.today||new Date().toLocaleDateString('sv-SE')))+
+        field('實際繳費金額（NT$）','<input name="amount" type="number" step="1" min="1" required inputmode="numeric" value="'+e(payment?.amount||'')+'" placeholder="輸入本次繳費金額">')+
+        '</div><button type="submit" class="wff-button wff-primary">確認本期已繳 ✓</button></form>'+
+        (payment&&canEdit()?'<button type="button" class="wff-textbtn" data-action="delete-card-payment" data-id="'+e(payment.id)+'">取消本期已繳紀錄</button>':'');
+    } else if(type==='card-history'){
+      const card=(S.meta?.accounts||[]).find(a=>Number(a.id)===Number(d.card_id));
+      const periods=S.cardPayments?.cards?.[d.card_id]?.periods||[];
+      title=e(card?.name||'信用卡')+' · 最近 12 期';
+      body='<div class="wff-card-history">'+periods.map(period=>
+        '<div class="wff-card-history-row"><div><strong>'+e(period.statement_on)+' 結帳</strong>'+
+        '<small>帳期 '+e(period.starts_on)+' ～ '+e(period.statement_on)+'</small>'+
+        '<small>繳款期限 '+e(period.due_on)+'</small>'+
+        '<span class="wff-card-paid-state" data-status="'+e(period.status)+'">'+
+        (period.payment?'已繳 '+money(period.payment.amount)+' · '+e(period.payment.paid_on):
+         (period.status==='overdue'?'尚未登記（已過期限）':'尚未登記'))+'</span></div>'+
+        (canEdit()?'<button class="wff-button" type="button" data-action="card-payment" data-id="'+e(d.card_id)+'" data-statement="'+e(period.statement_on)+'">'+(period.payment?'修改':'登記繳費')+'</button>':'')+
+        '</div>').join('')+'</div>';
     } else if(type==='invite'){
       title='邀請家庭成員';
       body='<div class="wff-note">受邀者加入後可共同查看家庭與公司收支。編輯者可修改資料，唯讀者只能查看。</div>'+
@@ -1026,9 +1052,19 @@
       const item=S.subscriptions?.items.find(x=>Number(x.id)===id);
       if(item)openModal('subscription',{...item.settings,name:item.settings.name+'（副本）',start_on:new Date().toLocaleDateString('sv-SE'),end_on:'',active:1});
     }
-    if(act==='repay-card'){
-      const card=S.meta.accounts.find(x=>Number(x.id)===id);
-      if(card)openModal('transaction',{kind:'transfer',scope:'family',destination_account_id:id,payment_method:'bank',note:card.name+' 卡費清償'});
+    if(act==='card-payment'){
+      const statement=target.dataset.statement;
+      const period=S.cardPayments?.cards?.[id]?.periods?.find(p=>p.statement_on===statement);
+      if(period&&canEdit())openModal('card-payment',{card_id:id,period});
+    }
+    if(act==='card-history'){
+      if(S.cardPayments?.cards?.[id]?.periods?.length)openModal('card-history',{card_id:id});
+    }
+    if(act==='delete-card-payment'&&canEdit()&&confirm('確定要取消這期「已繳」的標記嗎？此操作只刪除繳費紀錄，不影響其他記帳。')){
+      attempt(async()=>{
+        await request(path('card-payments/'+id),'DELETE');
+        resetModal();await reload();show('已取消本期已繳紀錄');
+      });
     }
     if(act==='new-subscription')openModal('subscription',{scope:'family',unit:'month',interval:1,active:1});
     if(act==='edit-subscription'){
@@ -1186,7 +1222,7 @@
       return;
     }
     const handled = ['wff-household-form','wff-signup','wff-transaction-form',
-      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-account-form','wff-invite-form','wff-import-form'];
+      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-account-form','wff-card-payment-form','wff-invite-form','wff-import-form'];
     if(!handled.includes(form.id)) return;
     ev.preventDefault();
     if(form.id==='wff-household-form'){
@@ -1241,6 +1277,17 @@
     if(form.id==='wff-category-form'){
       attempt(async()=>{const id=S.draft.id;await request(path('categories'+(id?'/'+id:'')),id?'PUT':'POST',getFormData(form));
         resetModal();await reload();show('分類儲存成功');});
+    }
+    if(form.id==='wff-card-payment-form'){
+      attempt(async()=>{
+        const period=S.draft.period;
+        if(!period||!S.draft.card_id)throw new Error('找不到信用卡帳期，請重新開啟');
+        await request(path('card-payments'),'POST',{
+          account_id:S.draft.card_id,statement_on:period.statement_on,
+          ...getFormData(form)
+        });
+        resetModal();await reload();show('本期信用卡已登記繳費');
+      });
     }
     if(form.id==='wff-account-form'){
       attempt(async()=>{const id=S.draft.id;const accountData=getFormData(form);accountData.enabled=form.querySelector('[name="enabled"]').checked?1:0;await request(path('accounts'+(id?'/'+id:'')),id?'PUT':'POST',accountData);
