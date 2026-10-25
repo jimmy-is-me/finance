@@ -553,6 +553,20 @@ final class WFF_API {
                 }
             }
         }
+        if ($type==='credit' && (!$statement || !$due)) {
+            return self::error('信用卡請設定固定結帳日與固定繳款日');
+        }
+        if ($original && $original['type']==='credit') {
+            $payments = WFF_Storage::table('card_payments');
+            $has_history = (int)$wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $payments WHERE household_id=%d AND account_id=%d", $hid, $id
+            ));
+            if ($has_history && ($type!=='credit' ||
+                (int)$original['statement_day'] !== (int)$statement ||
+                (int)$original['due_day'] !== (int)$due)) {
+                return self::error('已有歷史繳費紀錄，固定結帳日／繳款日或工具類型不可直接變更，以免帳期錯置；如確需更動，請先確認或取消既有繳費紀錄');
+            }
+        }
         $funding = null;
         if ($type==='mobile') {
             $funding = (int)$r->get_param('funding_account_id') ?: null;
