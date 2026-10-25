@@ -339,6 +339,34 @@ final class WFF_Loans {
                 return self::error('每月應繳金額須大於舊貸款的估算利息');
             }
         }
+        // A changed fixed amount takes effect at the selected installment.
+        // Never rewrite an installment already marked paid.
+        $effective_no=0;
+        $history=array();
+        if($old && $mode==='simple' && abs((float)$old['monthly_payment']-$monthly)>0.005){
+            $history=self::amount_changes($hid,$id);
+            $change_month=(string)$request->get_param('amount_change_from');
+            if($change_month!=='' && !preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/',$change_month)) {
+                return self::error('金額生效月份格式不正確');
+            }
+            $paid_max=(int)$wpdb->get_var($wpdb->prepare(
+                "SELECT COALESCE(MAX(installment_no),0) FROM $paytable WHERE household_id=%d AND loan_id=%d AND paid_on IS NOT NULL",
+                $hid,$id
+            ));
+            if($change_month==='') {
+                $effective_no=max(1,$paid_max+1,self::month_delta($first,wp_date('Y-m-d'))+1);
+            } else {
+                $effective_no=self::month_delta($first,$change_month.'-01')+1;
+            }
+            $latest=0;
+            foreach($history as $change)$latest=max($latest,(int)$change['installment_no']);
+            if($effective_no<= $paid_max) {
+                return self::error('生效月份包含已繳期數，請選擇最後一個已繳月份之後');
+            }
+            if($effective_no<max(1,$latest)||$effective_no>2400){
+                return self::error('金額生效月份須不早於上一次調整，且須在貸款追蹤範圍內');
+            }
+        }
         $now=current_time('mysql',true);
         $data=array(
             'scope'=>$scope,'name'=>mb_substr($name,0,120),
@@ -355,6 +383,7 @@ final class WFF_Loans {
             'updated_at'=>$now
         );
         $table=WFF_Storage::table('loans');
+        $wpdb->query('START TRANSACTION');
         if($id){
             $ok=$wpdb->update($table,$data,array('id'=>$id,'household_id'=>$hid));
         }else{
@@ -363,7 +392,45 @@ final class WFF_Loans {
             $ok=$wpdb->insert($table,$data);
             $id=(int)$wpdb->insert_id;
         }
-        if($ok===false)return self::error('儲存每月繳款追蹤失敗',500);
+        if($ok===false){$wpdb->query('ROLLBACK');return self::error('儲存每月繳款追蹤失敗',500);}
+        if($effective_no){
+            $changes_table=WFF_Storage::table('loan_amount_changes');
+            if(!$history){
+                // First change: keep the previous monthly amount before the
+                // first affected installment (or only new amount from #1).
+                if($effective_no>1){
+                    $ok=$wpdb->insert($changes_table,array(
+                        'household_id'=>$hid,'loan_id'=>$id,'installment_no'=>1,
+                        'monthly_payment'=>$old['monthly_payment'],'created_at'=>$now
+                    ));
+                    if($ok===false){$wpdb->query('ROLLBACK');return self::error('保留原貸款金額失敗',500);}
+                }
+            }
+            $existing_change=(int)$wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM $changes_table WHERE household_id=%d AND loan_id=%d AND installment_no=%d",
+                $hid,$id,$effective_no
+            ));
+            if($existing_change){
+                $ok=$wpdb->update($changes_table,array('monthly_payment'=>$monthly),array(
+                    'id'=>$existing_change,'household_id'=>$hid,'loan_id'=>$id
+                ));
+            }else{
+                $ok=$wpdb->insert($changes_table,array(
+                    'household_id'=>$hid,'loan_id'=>$id,'installment_no'=>$effective_no,
+                    'monthly_payment'=>$monthly,'created_at'=>$now
+                ));
+            }
+            if($ok===false){$wpdb->query('ROLLBACK');return self::error('儲存金額調整紀錄失敗',500);}
+            // Only alter generated UNPAID reminders from the effective month,
+            // never touch actual historical paid amounts or paid markers.
+            $tx=WFF_Storage::table('transactions');
+            $synced=$wpdb->query($wpdb->prepare(
+                "UPDATE $tx SET amount=%s,updated_at=%s WHERE household_id=%d AND loan_id=%d AND kind='expense' AND payment_status='unpaid' AND loan_installment >=%d",
+                $monthly,$now,$hid,$id,$effective_no
+            ));
+            if($synced===false){$wpdb->query('ROLLBACK');return self::error('更新尚未繳款期數失敗',500);}
+        }
+        $wpdb->query('COMMIT');
         WFF_Storage::activity($hid,$old?'update_loan':'create_loan',$id);
         self::generate($hid);
         return array('saved'=>true,'id'=>$id);
