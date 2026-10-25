@@ -353,6 +353,14 @@ final class WFF_Loans {
                 "SELECT COALESCE(MAX(installment_no),0) FROM $paytable WHERE household_id=%d AND loan_id=%d AND paid_on IS NOT NULL",
                 $hid,$id
             ));
+            // Also respect entries explicitly marked paid in the general
+            // ledger, including older data lacking a loan_payments row.
+            $ledger_table=WFF_Storage::table('transactions');
+            $ledger_paid_max=(int)$wpdb->get_var($wpdb->prepare(
+                "SELECT COALESCE(MAX(loan_installment),0) FROM $ledger_table WHERE household_id=%d AND loan_id=%d AND payment_status='paid'",
+                $hid,$id
+            ));
+            $paid_max=max($paid_max,$ledger_paid_max);
             if($change_month==='') {
                 $effective_no=max(1,$paid_max+1,self::month_delta($first,wp_date('Y-m-d'))+1);
             } else {
