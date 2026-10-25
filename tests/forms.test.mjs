@@ -59,7 +59,9 @@ test('subscription actions retain history and card repayments use the new billin
  assert.match(source,/copy-subscription/);
  assert.match(source,/!Number\(x.active\)\?'<button[^']+delete-subscription/);
  assert.match(source,/歷史收支紀錄會保留/);
- assert.match(source,/destination_account_id:id,payment_method:'bank'/);
+ assert.match(source,/data-action="card-payment"/);
+ assert.match(source,/wff-card-payment-form/);
+ assert.doesNotMatch(source,/data-action="repay-card"/);
  const a=app();a.api.S.modal='transaction';a.api.S.draft={kind:'transfer',destination_account_id:4};
  const html=a.api.modal();assert.match(html,/帳單出帳日期/);assert.match(html,/帳單繳款期限/);
  assert.doesNotMatch(html, /class="wff-bill-dates" hidden/);
