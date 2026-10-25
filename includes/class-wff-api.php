@@ -192,6 +192,13 @@ final class WFF_API {
             $where .= " AND t.kind=%s";
             $params[] = $filters['kind'];
         }
+        // Search only this household's note field, before COUNT and LIMIT,
+        // so matches work across every page instead of the visible 25 records.
+        $keyword = mb_substr(trim((string)($filters['search'] ?? '')), 0, 100);
+        if ($keyword !== '') {
+            $where .= " AND t.note LIKE %s";
+            $params[] = '%' . $wpdb->esc_like($keyword) . '%';
+        }
         $count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $t t WHERE $where", $params));
         $params[] = $limit;
         $params[] = $offset;
@@ -214,7 +221,7 @@ final class WFF_API {
         if (is_wp_error($role)) { return $role; }
         $page = max(1, min(100000, (int) $r->get_param('page') ?: 1));
         $per = max(5, min(100, (int) $r->get_param('per_page') ?: 30));
-        $filters = array('month' => $r->get_param('month'), 'scope' => $r->get_param('scope'), 'kind' => $r->get_param('kind'));
+        $filters = array('month' => $r->get_param('month'), 'scope' => $r->get_param('scope'), 'kind' => $r->get_param('kind'), 'search' => $r->get_param('search'));
         WFF_Subscriptions::generate($hid);
         WFF_Loans::generate($hid);
         $rows = self::entries($hid, $filters, $per, ($page - 1) * $per);
