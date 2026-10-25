@@ -433,3 +433,18 @@ test('1.3.2 encrypted receipt fallback never persists readable image bytes benea
   assert.match(store, /glob\(\$dir \. '\/\*\.enc'\)/);
   assert.match(store, /getimagesizefromstring/);
 });
+
+test('credit card payments record a fixed monthly period without creating another transaction', () => {
+  assert.match(js, /cardPayments=cardPayments/);
+  assert.match(js, /data-action="card-payment"/);
+  assert.match(js, /wff-card-payment-form/);
+  assert.match(js, /card-payments/);
+  assert.doesNotMatch(js, /data-action="repay-card"/);
+  const api = readFileSync('includes/class-wff-api.php', 'utf8');
+  const storage = readFileSync('includes/class-wff-storage.php', 'utf8');
+  const calendar = readFileSync('includes/class-wff-card-cycles.php', 'utf8');
+  assert.match(api, /function save_card_payment/);
+  assert.match(api, /ON DUPLICATE KEY UPDATE/);
+  assert.match(storage, /UNIQUE KEY household_card_statement/);
+  assert.match(calendar, /class WFF_Card_Cycles/);
+});
