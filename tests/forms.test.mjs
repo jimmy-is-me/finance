@@ -48,6 +48,34 @@ test('card paid marker sends only the date, amount, card and fixed statement cyc
   assert.equal(payload.kind,undefined,'must not create another transfer');
 });
 
+test('ledger note search combines filters, resets page, and queries server across pagination',async()=>{
+  const a=app();
+  a.api.S.page=4;
+  let prevented=false;
+  a.listeners.submit({target:{id:'wff-note-search-form',data:{search:'  卡費  '},classList:{contains:()=>false}},preventDefault(){prevented=true;}});
+  await new Promise(resolve=>setTimeout(resolve,12));
+  assert.equal(prevented,true);
+  assert.equal(a.api.S.noteSearch,'卡費');
+  assert.equal(a.api.S.page,1);
+  assert(a.posts.some(p=>p.url.includes('transactions?')&&p.url.includes('search=%E5%8D%A1%E8%B2%BB')),'Search must reach server');
+  assert.match(a.api.transactions(),/備註搜尋/);
+  assert.match(a.api.transactions(),/卡費/);
+});
+
+test('loan edit settings offer a future effective month and credit card setup is accessible',()=>{
+  const a=app();
+  a.api.S.modal='loan';
+  a.api.S.draft={id:5,tracking_mode:'simple',amount_change_from:'2026-11',first_due_on:'2026-10-10',monthly_payment:15000};
+  const html=a.api.modal();
+  assert.match(html,/name="amount_change_from" type="month"/);
+  assert.match(html,/value="2026-11"/);
+  assert.match(html,/已繳期數/);
+  a.api.S.meta.accounts=[{id:2,type:'credit',name:'新卡',enabled:1}];
+  a.api.S.cardPayments={cards:{2:{periods:[]}}};
+  const card=a.api.accounts();
+  assert.match(card,/設定固定出帳日／繳款日/);
+});
+
 test('unpaid subscription has explicit state and owner payment action',()=>{
  const a=app();a.api.S.transactions.items=[{id:7,occurred_on:'2026-10-18',kind:'expense',scope:'family',subscription_id:1,payment_status:'unpaid',amount:390,note:'Netflix'}];
  const html=a.api.transactions();assert.match(html,/未繳費/);assert.match(html,/subscription-paid/);
