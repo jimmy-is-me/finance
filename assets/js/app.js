@@ -1076,7 +1076,130 @@
     root.querySelectorAll('.wff-sort-target,.wff-sorting').forEach(x=>x.classList.remove('wff-sort-target','wff-sorting'));
     if(filtered.some((x,i)=>x!==ids[i]))persistCategoryOrder(group,filtered);
   });
-  root.addEventListener('dra…1926 tokens truncated…ms||[]).find(x=>Number(x.id)===id);
+  root.addEventListener('dragend',()=>{
+    draggedCategory=null;
+    root.querySelectorAll('.wff-sort-target,.wff-sorting').forEach(x=>x.classList.remove('wff-sort-target','wff-sorting'));
+  });
+  root.addEventListener('click',ev=>{
+    const target=ev.target.closest('[data-action],[data-view]');
+    if (!target) return;
+    // Overlay clicks intentionally do nothing; only the X button closes.
+    if (target.dataset.action==='close-modal' || target.dataset.view) ev.preventDefault();
+    if (target.dataset.view) { attempt(()=>go(target.dataset.view)); return; }
+    const act=target.dataset.action,id=Number(target.dataset.id);
+    const item=S.transactions?.items.find(x=>Number(x.id)===id)||S.dashboard?.recent.find(x=>Number(x.id)===id);
+    if(act==='toggle-nav'){ S.nav=!S.nav;render(); }
+    if(act==='fallback-login'){
+      const form=root.querySelector('.wff-login-form');
+      if(form){ form.submit(); }
+    }
+    if(act==='close-modal'){ resetModal(); }
+    if(act==='new-transaction'){openModal('transaction',{scope:'family',kind:'expense'});}
+    if(act==='view-receipt'){
+      attempt(async()=>{
+        // Open synchronously to avoid popup blockers.
+        const area=root.querySelector('.wff-receipt-preview');
+        const imageData=await request(path('transactions/'+id+'/receipt'));
+        if(area){area.innerHTML='<img alt="已存收據" src="'+e(imageData.data_url)+'">';area.scrollIntoView({block:'nearest'});}
+        else {
+          const w=window.open('','_blank');
+          if(w){
+            w.document.title='Finance 收據';
+            w.document.body.style='margin:0;background:#111;display:grid;place-items:center;min-height:100vh';
+            const img=w.document.createElement('img');
+            img.src=imageData.data_url;img.alt='收據';img.style='max-width:100%;max-height:100vh;object-fit:contain';
+            w.document.body.appendChild(img);
+          }
+        }
+      });
+    }
+    if(act==='remove-receipt' && confirm('確定移除已存收據照片？')){
+      attempt(async()=>{await request(path('transactions/'+id+'/receipt'),'DELETE');
+        S.draft={...S.draft,...getFormData(root.querySelector('.wff-modal form')),has_receipt:0};render(true);show('已移除收據');});
+    }
+    if(act==='edit-transaction'&&item){
+      if(item.card_payment_id){
+        openModal('card-payment',{card_id:Number(item.account_id),period:{statement_on:item.statement_on,starts_on:item.statement_on,due_on:item.payment_due_on,manual:!item.payment_due_on,payment:{id:Number(item.card_payment_id),paid_on:item.occurred_on,amount:item.amount,scope:item.scope,note:item.card_note||'',tracking_code:item.tracking_code}}});
+      }else openModal('transaction',item);
+    }
+    if(act==='duplicate-transaction'&&item&&!item.card_payment_id){
+      const copy={...item};
+      delete copy.id; delete copy.created_at; delete copy.updated_at;
+      delete copy.creator_name; delete copy.created_by;
+      copy.duplicate_from=item.id;
+      openModal('transaction',copy);
+    }
+    if(act==='delete-transaction'&&item&&confirm('確定要刪除這筆 '+money(item.amount)+' 交易？')) {
+      attempt(async()=>{await request(path('transactions/'+id),'DELETE');await reload();show('已刪除交易');});
+    }
+    if(act==='delete-subscription')attempt(async()=>{
+      if(!confirm('刪除此已停止訂閱？歷史收支紀錄會保留。'))return;
+      await request(path('subscriptions/'+id),'DELETE');await reload();show('訂閱已刪除，歷史收支保留');
+    });
+    if(act==='copy-subscription'){
+      const item=S.subscriptions?.items.find(x=>Number(x.id)===id);
+      if(item)openModal('subscription',{...item.settings,name:item.settings.name+'（副本）',start_on:new Date().toLocaleDateString('sv-SE'),end_on:'',active:1});
+    }
+    if(act==='card-payment'){
+      const statement=target.dataset.statement;
+      const period=S.cardPayments?.cards?.[id]?.periods?.find(p=>p.statement_on===statement);
+      if(period&&canEdit())openModal('card-payment',{card_id:id,period});
+    }
+    if(act==='card-history'){
+      if(S.cardPayments?.cards?.[id]?.periods?.length)openModal('card-history',{card_id:id});
+    }
+    if(act==='delete-card-payment'&&canEdit()&&confirm('確定取消本期已繳？對應的繳費備查會同步移除，原消費記帳不變。')){
+      attempt(async()=>{
+        await request(path('card-payments/'+id),'DELETE');
+        resetModal();await reload();show('已取消本期已繳紀錄');
+      });
+    }
+    if(act==='new-subscription')openModal('subscription',{scope:'family',unit:'month',interval:1,active:1});
+    if(act==='edit-subscription'){
+      const item=S.subscriptions?.items.find(x=>Number(x.id)===id);
+      if(item)openModal('subscription',{...item.settings,id:item.id,active:item.active});
+    }
+    if(act==='subscription-paid')attempt(async()=>{
+      await request(path('subscriptions/payments/'+id),'PUT',{paid:target.dataset.paid==='1'});
+      await reload();show('繳費狀態已更新');
+    });
+    if(act==='delete-loan'&&isOwner()){
+      const loan=S.loans?.items.find(x=>Number(x.id)===id);
+      if(!loan||!confirm('第一次確認：要刪除「'+loan.name+'」這筆貸款嗎？'))return;
+      if(!confirm('第二次確認：貸款設定與逐期繳款備忘將移除，已產生的收支紀錄會保留。確定刪除「'+loan.name+'」？'))return;
+      attempt(async()=>{await request(path('loans/'+id),'DELETE',{confirm_delete:true,confirmation_name:loan.name});delete S.loanExpanded[id];resetModal();await reload();show('貸款已刪除，收支紀錄已保留');});
+    }
+    if(act==='new-loan'){openModal('loan',{scope:'family',status:'active'});}
+    if(act==='edit-loan'){
+      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
+      if(loan)openModal('loan',loan);
+    }
+    if(act==='loan-window-prev'||act==='loan-window-next'||act==='loan-window-today'){
+      const next=act==='loan-window-today'?0:
+        Math.max(-120,Math.min(120,S.loanWindowOffset+(act==='loan-window-prev'?-12:12)));
+      if(next!==S.loanWindowOffset){
+        attempt(async()=>{S.loanWindowOffset=next;S.loanExpanded={};S.loans=await loadLoans();render();});
+      }
+    }
+    if(act==='quick-pay-loan'){
+      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
+      const number=Number(target.dataset.number);
+      const p=loan?.schedule?.find(x=>x.number===number);
+      if(loan && p && !p.paid_on && !Number(loan.regular_payment)){openModal('loan-payment',{loan_id:id,installment_no:number});return;}
+      if(loan && p && !p.paid_on){
+        attempt(async()=>{
+          await request(path('loans/'+id+'/payments'),'POST',{
+            installment_no:number,
+            paid_on:new Date().toLocaleDateString('sv-SE'),
+            paid_amount:loan.regular_payment||0,
+            note:''
+          });
+          await reload();show('已標記 '+loan.name+' 第 '+number+' 期繳款');
+        });
+      }
+    }
+    if(act==='pay-loan'){
+      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
       const number=Number(target.dataset.number);
       if(loan?.schedule?.some(x=>x.number===number)){
         openModal('loan-payment',{loan_id:id,installment_no:number});
