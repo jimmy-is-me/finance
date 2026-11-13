@@ -18,6 +18,7 @@ jobs:
         with:
           php-version: '8.2'
           tools: none
+          extensions: mbstring, sqlite3
       - name: Check PHP syntax
         run: |
           find . -name '*.php' -type f -print0 | xargs -0 -n1 php -l
@@ -29,6 +30,8 @@ jobs:
         run: |
           php tests/loan-schedule.test.php
           php tests/loan-ledger.test.php
+      - name: Test database-backed finance API
+        run: php tests/finance-api.test.php
       - name: Test credit card cross-month statement calendar
         run: php tests/card-cycles.test.php
       - name: Test subscription calendar
@@ -38,6 +41,12 @@ jobs:
           php tests/private-receipts.test.php safe
           php tests/private-receipts.test.php unsafe
           php tests/receipt-media.test.php
+      - name: Prepare browser regression tests
+        run: |
+          npm install --no-save --no-package-lock playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Test draft preservation and financial UI in Chromium
+        run: node tests/browser-regression.cjs
       - name: Package installable plugin ZIP
         run: |
           mkdir -p dist staging/wumetax-finance

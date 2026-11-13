@@ -27,7 +27,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.4.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.5.5'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.6.0'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -196,7 +196,7 @@ test('v1.2.5 duplicate transaction uses a new ID and preserves original',()=>{
 test('payment method changes update dependent DOM without render or scroll reset',()=>{
  assert.match(js,/function refreshTransactionFields\(form,changed\)/);
  assert.match(js,/block\.innerHTML=transactionFields\(data\)/);
- assert.match(js,/refreshTransactionFields\(t\.form,t\.name\)/);
+ assert.match(js,/refreshTransactionFields\(form,t\.name\)/);
  const pos=js.indexOf('function refreshTransactionFields(form,changed)');
  const end=js.indexOf('function updateCategorySelect(form)',pos);
  const body=js.slice(pos,end);
@@ -434,7 +434,7 @@ test('1.3.2 encrypted receipt fallback never persists readable image bytes benea
   assert.match(store, /getimagesizefromstring/);
 });
 
-test('credit card payments record a fixed monthly period without creating another transaction', () => {
+test('credit card payments record card payment references without double counting expenses', () => {
   assert.match(js, /cardPayments=cardPayments/);
   assert.match(js, /data-action="card-payment"/);
   assert.match(js, /wff-card-payment-form/);
@@ -444,7 +444,9 @@ test('credit card payments record a fixed monthly period without creating anothe
   const storage = readFileSync('includes/class-wff-storage.php', 'utf8');
   const calendar = readFileSync('includes/class-wff-card-cycles.php', 'utf8');
   assert.match(api, /function save_card_payment/);
-  assert.match(api, /ON DUPLICATE KEY UPDATE/);
+  assert.match(api, /GET_LOCK/);
+  assert.match(api, /write_card_payment_entry/);
+  assert.match(storage, /UNIQUE KEY card_payment_ref/);
   assert.match(storage, /UNIQUE KEY household_card_statement/);
   assert.match(calendar, /class WFF_Card_Cycles/);
 });

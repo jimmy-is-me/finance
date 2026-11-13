@@ -6,7 +6,7 @@ function app(){
  const listeners={},posts=[];
  const root={innerHTML:'',addEventListener:(event,handler)=>listeners[event]=handler,querySelector:()=>null};
  const ctx=vm.createContext({document:{getElementById:()=>root,createElement:()=>({setAttribute(){}}),addEventListener:()=>{},body:{appendChild(){},classList:{toggle(){}}}},window:{WFF_CONFIG:{user:{name:'Tester'},rest:'/',nonce:'test'},clearTimeout(){},setTimeout(){}},location:{search:''},URLSearchParams,URL,console,FormData:class{constructor(form){this.data=form.data;}entries(){return Object.entries(this.data);}},fetch:async(url,options)=>{posts.push({url,...options});return {ok:true,json:async()=>url.includes('transactions')?{items:[],total:0,page:1,pages:1}:url.includes('meta')?{role:'owner',categories:[],accounts:[]}:url.includes('dashboard')?{recent:[],cards:[]}:{items:[]}};}});
- let source=readFileSync('assets/js/app.js','utf8').replace('  start();','  window.api={S,modal,transactions,subscriptions,loans,accounts};');
+ let source=readFileSync('assets/js/app.js','utf8').replace('  start();','  window.api={S,modal,transactions,subscriptions,loans,accounts,dashboard,activity,codeSummary};');
  vm.runInContext(source,ctx);
  const {S}=ctx.window.api;
  Object.assign(S,{hid:1,view:'transactions',households:[{id:1,name:'Home'}],meta:{role:'owner',categories:[],accounts:[]},transactions:{items:[],total:0,page:1,pages:1},dashboard:{recent:[]}});
@@ -24,7 +24,7 @@ test('loan and repayment submit events prevent navigation and reach their endpoi
 test('new transaction form follows requested order and accepts integer steps',()=>{
  const a=app();a.api.S.modal='transaction';a.api.S.draft={scope:'family',kind:'expense'};
  const html=a.api.modal();const names=[...html.matchAll(/name="([^"]+)"/g)].map(x=>x[1]);
- assert.deepEqual(names,['scope','kind','occurred_on','amount','note','category_id','payment_method','account_id','statement_on','payment_due_on','receipt']);
+ assert.deepEqual(names,['scope','kind','occurred_on','amount','note','tracking_code','category_id','payment_method','account_id','statement_on','payment_due_on','receipt']);
  assert.match(html,/name="amount" type="number" step="1"/);
 });
 test('card paid marker sends only the date, amount, card and fixed statement cycle',async()=>{
@@ -126,4 +126,22 @@ test('USD subscription reference is visible without changing TWD ledger amount',
  a.api.S.subscriptions={items:[{id:1,active:1,next_due:'2026-11-18',settings:{name:'ChatGPT',scope:'family',amount:650,original_usd:'20.00',interval:1,unit:'month'}}]};
  const html=a.api.subscriptions();assert.match(html,/原價 US\$ 20.00/);assert.match(html,/650/);
  a.api.S.subscriptions.items[0].settings.original_usd='';assert.doesNotMatch(a.api.subscriptions(),/原價 US\$/);
+});
+
+
+test('code summaries keep paid, unpaid, family and company amounts separate',()=>{
+ const a=app();a.api.S.codeSearch='TRIP';
+ const html=a.api.codeSummary([{scope:'family',kind:'expense',payment_status:'paid',amount:1200},{scope:'business',kind:'expense',payment_status:'paid',amount:300},{scope:'family',kind:'card_payment',payment_status:'paid',amount:9999},{scope:'family',kind:'expense',payment_status:'unpaid',amount:50}]);
+ assert.match(html,/1,200/);assert.match(html,/300/);assert.match(html,/50/);assert.doesNotMatch(html,/9,999/);
+});
+test('undated cards show monthly payment form without requiring fixed dates',()=>{
+ const a=app();a.api.S.meta.accounts=[{id:4,type:'credit',name:'Card'}];
+ a.api.S.cardPayments={cards:{4:{configured:false,periods:[{statement_on:'2026-11-01',manual:true,status:'pending'}]}}};
+ assert.match(a.api.accounts(),/data-action="card-payment"/);
+ a.api.S.modal='card-payment';a.api.S.draft={card_id:4,period:{manual:true,statement_on:'2026-11-01'}};
+ assert.match(a.api.modal(),/name="billing_month"/);assert.match(a.api.modal(),/不會重複計入收入或支出/);
+});
+test('audit table displays plain language server labels instead of raw event names',()=>{
+ const a=app();a.api.S.activities=[{action:'save_loan_payment',action_label:'登記或修改貸款繳款',local_time:'2026-11-13 15:00:00',details:'第 1 期'}];
+ const html=a.api.activity();assert.match(html,/登記或修改貸款繳款/);assert.doesNotMatch(html,/save_loan_payment/);assert.match(html,/15:00:00/);
 });

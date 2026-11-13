@@ -89,14 +89,18 @@ final class WFF_Storage {
             KEY household_id (household_id)
         ) $c;");
         // Each card / closing date has one independently editable paid marker.
-        // These records NEVER generate expense or transfer transactions.
+        // A linked card_payment ledger row is reference-only, never another expense.
         dbDelta("CREATE TABLE $card_payments (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             household_id bigint(20) unsigned NOT NULL,
             account_id bigint(20) unsigned NOT NULL,
             statement_on date NOT NULL,
-            due_on date NOT NULL,
+            due_on date DEFAULT NULL,
             paid_on date NOT NULL,
+            is_manual tinyint(1) NOT NULL DEFAULT 0,
+            scope varchar(16) NOT NULL DEFAULT 'family',
+            note varchar(255) NOT NULL DEFAULT '',
+            tracking_code varchar(60) NOT NULL DEFAULT '',
             amount decimal(14,2) NOT NULL,
             created_by bigint(20) unsigned NOT NULL,
             created_at datetime NOT NULL,
@@ -106,6 +110,9 @@ final class WFF_Storage {
             KEY household_account (household_id,account_id),
             KEY household_paid_on (household_id,paid_on)
         ) $c;");
+        // dbDelta compares types but does not reliably relax NOT NULL on an existing DATE.
+        $due_column=$wpdb->get_row("SHOW COLUMNS FROM $card_payments LIKE 'due_on'",ARRAY_A);
+        if($due_column && ($due_column['Null']??'NO')!=='YES')$wpdb->query("ALTER TABLE $card_payments MODIFY due_on date NULL");
         dbDelta("CREATE TABLE $t (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             household_id bigint(20) unsigned NOT NULL,
@@ -115,6 +122,8 @@ final class WFF_Storage {
             category_id bigint(20) unsigned DEFAULT NULL,
             amount decimal(14,2) NOT NULL,
             note varchar(255) NOT NULL DEFAULT '',
+            tracking_code varchar(60) NOT NULL DEFAULT '',
+            card_payment_id bigint(20) unsigned DEFAULT NULL,
             payment_status varchar(12) NOT NULL DEFAULT 'paid',
             subscription_id bigint(20) unsigned DEFAULT NULL,
             subscription_due date DEFAULT NULL,
@@ -130,6 +139,8 @@ final class WFF_Storage {
             created_at datetime NOT NULL,
             updated_at datetime NOT NULL,
             PRIMARY KEY  (id),
+            UNIQUE KEY card_payment_ref (card_payment_id),
+            KEY household_code (household_id,tracking_code),
             UNIQUE KEY subscription_due (subscription_id,subscription_due),
             UNIQUE KEY loan_due (loan_id,loan_installment),
             KEY household_date (household_id,occurred_on),
@@ -191,6 +202,8 @@ final class WFF_Storage {
             due_on date NOT NULL,
             paid_on date NOT NULL,
             paid_amount decimal(15,2) NOT NULL,
+            principal_amount decimal(15,2) DEFAULT NULL,
+            interest_amount decimal(15,2) DEFAULT NULL,
             extra_principal decimal(15,2) NOT NULL DEFAULT 0,
             note varchar(255) NOT NULL DEFAULT '',
             payment_status varchar(12) NOT NULL DEFAULT 'paid',

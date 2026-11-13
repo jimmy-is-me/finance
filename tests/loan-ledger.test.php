@@ -22,7 +22,7 @@ class DB {
  function get_row($q,$mode=null){[$sql,$args]=$q;if(strpos($sql,'FROM loans')!==false){$l=$this->data['loans'][$args[0]]??null;return $l&&(!isset($args[1])||$l['household_id']==$args[1])?$l:null;}if(strpos($sql,'FROM loan_payments')!==false){foreach($this->data['loan_payments'] as $p)if($p['loan_id']==$args[0]&&$p['installment_no']==$args[1])return $p;}return null;}
  function get_var($q){[$sql,$args]=$q;if(strpos($sql,'GET_LOCK')!==false||strpos($sql,'RELEASE_LOCK')!==false)return 1;if(strpos($sql,'SELECT role')!==false)return $this->role;if(strpos($sql,'SELECT user_id')!==false)return 1;
  if(strpos($sql,'FROM categories')!==false){foreach($this->data['categories'] as $c)if($c['household_id']==$args[0]&&$c['scope']==$args[1])return $c['id'];return null;}
- if(strpos($sql,'FROM transactions')!==false){foreach($this->data['transactions'] as $t)if($t['loan_id']==$args[0]&&$t['loan_installment']==$args[1])return $t['id'];return null;}
+ if(strpos($sql,'FROM transactions')!==false){foreach($this->data['transactions'] as $t){if(count($args)===3){if($t['household_id']==$args[0]&&$t['loan_id']==$args[1]&&$t['loan_installment']==$args[2])return $t['id'];}elseif($t['loan_id']==$args[0]&&$t['loan_installment']==$args[1])return $t['id'];}return null;}
  if(strpos($sql,'FROM loan_payments')!==false){foreach($this->data['loan_payments'] as $p)if($p['household_id']==$args[0]&&$p['loan_id']==$args[1]&&$p['installment_no']==$args[2])return $p['id'];return null;}throw new Exception($sql);}
  function insert($table,$row){$id=++$this->insert_id;$row['id']=$id;$this->data[$table][$id]=$row;return 1;}
  function update($table,$data,$where){if($table==='transactions'&&$this->fail)return false;$n=0;foreach($this->data[$table] as &$r)if($this->matches($r,$where)){$r=array_merge($r,$data);$n++;}return $n;}
@@ -40,6 +40,14 @@ check(!is_wp_error(WFF_Loans::save_payment($r)),'Owner payment accepted');
 $t=array_values($wpdb->data['transactions'])[0];check($t['payment_status']==='paid'&&$t['amount']===5100.0,'Ledger follows loan payment');
 $wpdb->fail=true;check(is_wp_error(WFF_Loans::delete_payment($r)),'Surface synchronization failure');check(count($wpdb->data['loan_payments'])===1,'Failure rolls back payment deletion');$wpdb->fail=false;
 check(!is_wp_error(WFF_Loans::delete_payment($r)),'Undo succeeds');check(array_values($wpdb->data['transactions'])[0]['payment_status']==='unpaid','Undo resets ledger');
+$r['principal_amount']='4800';$r['interest_amount']='250';$r['paid_amount']='99999';
+check(!is_wp_error(WFF_Loans::save_payment($r)),'Principal and interest accepted');
+check(array_values($wpdb->data['transactions'])[0]['amount']===5050.0,'Server computes total from components');
+$payment=array_values($wpdb->data['loan_payments'])[0];check($payment['principal_amount']===4800.0&&$payment['interest_amount']===250.0,'Components retained');
+$r['interest_amount']='-1';check(is_wp_error(WFF_Loans::save_payment($r)),'Negative interest rejected');$r['interest_amount']='250';
+$r['installment_no']='4';$r['number']='4';
+$before=count($wpdb->data['transactions']);check(!is_wp_error(WFF_Loans::save_payment($r)),'Early installment accepted');check(count($wpdb->data['transactions'])===$before+1,'Early repayment creates one ledger occurrence');
+check(!is_wp_error(WFF_Loans::save_payment($r)),'Early repeat accepted');check(count($wpdb->data['transactions'])===$before+1,'Early repeat does not duplicate');
 $wpdb->role='editor';check(is_wp_error(WFF_Loans::save_payment($r)),'Editor cannot mark paid');
 $wpdb->data['loans'][1]['status']='closed';$before=count($wpdb->data['transactions']);WFF_Loans::generate(1);check(count($wpdb->data['transactions'])===$before,'Closed loan preserves history');
 echo "Loan ledger generation, synchronization, permissions and rollback passed\n";

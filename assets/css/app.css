@@ -897,3 +897,13 @@ body.wff-standalone,#wff-app{font-family:Outfit,"Noto Sans TC","Microsoft JhengH
 #wff-app .wff-note-search .wff-button{margin:0;min-height:44px}
 #wff-app .wff-note-search .wff-textbtn{padding:8px}
 @media(max-width:620px){#wff-app .wff-note-search{flex-basis:100%}#wff-app .wff-note-search>label{width:100%}}
+
+/* Finance 1.6: draft-safe notices and supplemental tracking fields. */
+#wff-app .wff-modal-notice[hidden]{display:none!important}
+#wff-app .wff-modal-notice{position:static;max-width:none;margin:0 0 18px;background:#1040c0;color:#fff;border:2px solid #121212}
+#wff-app .wff-code-tag{display:block;color:#1040c0;font-weight:700;overflow-wrap:anywhere}
+#wff-app .wff-code-summary{margin:18px 0;line-height:1.8}
+#wff-app .wff-note-search>label:has(input[type="search"]){display:flex;align-items:center;gap:8px;flex:1 1 230px;min-width:0}
+#wff-app .wff-note-search .wff-checkline{display:flex;align-items:center;gap:8px;width:auto}
+#wff-app .wff-note-search input[type="checkbox"]{width:18px;height:18px;flex:none}
+#wff-app .wff-form input[readonly]{background:#f4f4f4;color:#121212}

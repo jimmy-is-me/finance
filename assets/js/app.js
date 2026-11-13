@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.5.4 — fixed-cycle credit card payment status */
+/* WUMETAX Finance v1.6.0 */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -12,7 +12,7 @@
   ];
   const S = {
     view: 'dashboard', accountTab:'all', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
-    scope: 'all', kind: 'all', noteSearch: '', page: 1, households: [], hid: 0, meta: null,
+    scope: 'all', kind: 'all', noteSearch: '', codeSearch:'', codeAllMonths:false, modalEpoch:0, page: 1, households: [], hid: 0, meta: null,
     dashboard: null, transactions: null, subscriptions: null, loans: null, cardPayments:null, loanExpanded: {}, loanScope:'all', loanWindowOffset:0, activities: [], modal: null,
     draft: {}, busy: false, nav: false, notice: '', authError: '', loginDraft: '', invitationError: '', csv: '', csvName: '',
     importYear: new Date().getFullYear(), importPreview: null, invitation: null,
@@ -21,7 +21,7 @@
   const e = value => String(value ?? '').replace(/[&<>"']/g, v =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[v]));
   const money = value => 'NT$ ' + Number(value || 0).toLocaleString('zh-TW',{maximumFractionDigits:2});
-  const readable = kind => ({income:'收入',expense:'支出',transfer:'轉帳'})[kind] || kind;
+  const readable = kind => ({income:'收入',expense:'支出',transfer:'轉帳',card_payment:'信用卡繳費備查'})[kind] || kind;
   const scopeName = scope => ({family:'家庭',business:'公司'})[scope] || scope;
   const icon = (s) => '<span class="wff-symbol" aria-hidden="true">' + e(s) + '</span>';
   const isOwner = () => S.meta?.role === 'owner';
@@ -67,7 +67,7 @@
   async function reload() {
     if (!S.hid) { render(); return; }
     // Complete due-item generation before reading totals and newly created categories.
-    const transactions=await request(path('transactions?month='+encodeURIComponent(S.month)+'&scope='+e(S.scope)+'&kind='+e(S.kind)+'&page='+S.page+'&per_page=25&search='+encodeURIComponent(S.noteSearch)));
+    const transactions=await request(path('transactions?month='+encodeURIComponent(S.codeAllMonths?'all':S.month)+'&scope='+e(S.scope)+'&kind='+e(S.kind)+'&page='+S.page+'&per_page=25&search='+encodeURIComponent(S.noteSearch)+'&code='+encodeURIComponent(S.codeSearch)));
     const [meta,dashboard,cardPayments]=await Promise.all([request(path('meta')),request(path('dashboard?month='+encodeURIComponent(S.month))),request(path('card-payments'))]);
     S.meta=meta; S.dashboard=dashboard; S.transactions=transactions; S.cardPayments=cardPayments;
     if (S.view === 'activity') S.activities=await request(path('activity'));
@@ -304,6 +304,7 @@
         '</div>';
     };
     const latest=d.recent||[];
+    const yesterday=d.yesterday||{date:'',total:0,items:[],totals:{}};
     const today=d.today||{date:new Date().toLocaleDateString('sv-SE'),total:0,items:[],
       totals:{income:0,expense:0,transfer:0}};
     return '<div class="wff-pagehead"><div><div class="wff-kicker">OVERVIEW / 財務總覽</div>'+
@@ -338,6 +339,17 @@
           '<strong>'+money(x.amount)+'</strong></div>').join('')+'</div>':
           empty('今天還沒有記帳，按「新增記帳」即可建立第一筆'))+
       (today.total>20?'<p class="wff-small">今日顯示最新 20 筆。</p>':'')+'</section>'+
+      '<section class="wff-panel wff-today-panel"><div class="wff-panel-head"><h2>昨日記帳</h2>'+
+      '<span class="wff-pill">'+e(yesterday.date)+' · '+e(yesterday.total)+' 筆</span></div>'+
+      '<div class="wff-today-stats"><span>昨日收入 <b>'+money(yesterday.totals?.income||0)+'</b></span>'+
+      '<span>昨日支出 <b>'+money(yesterday.totals?.expense||0)+'</b></span>'+
+      '<span>昨日總筆數 <b>'+e(yesterday.total)+' 筆</b></span></div>'+
+      (yesterday.items?.length?'<div class="wff-today-list">'+yesterday.items.map(x=>
+          '<div class="wff-today-item"><div><b>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</b>'+
+          '<small>'+e(scopeName(x.scope))+' · '+e(x.note||'無備註')+(x.payment_status==='unpaid'?' · 未繳費':'')+'</small></div>'+
+          '<strong>'+money(x.amount)+'</strong></div>').join('')+'</div>':
+          empty('昨天還沒有記帳，按「新增記帳」即可建立第一筆'))+
+      (yesterday.total>20?'<p class="wff-small">昨日顯示最新 20 筆。</p>':'')+'</section>'+
       getCharts()+
       '<div class="wff-two"><section class="wff-panel"><div class="wff-panel-head"><h2>家庭每日花費明細</h2><span class="wff-pill">DAILY</span></div>'+
       (d.daily?.length?'<div class="wff-tablewrap"><table><thead><tr><th>日期</th><th>餐飲</th><th>其他</th><th>總計</th></tr></thead><tbody>'+
@@ -438,7 +450,7 @@
        '<th>月份／期數</th><th>預定繳款日</th><th>預計金額</th><th>狀態</th><th>實際繳款／備註</th>'+
        (isOwner()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
        visible.map(p=>{
-         const note=p.note?'<small>'+e(p.note)+'</small>':'';
+         const note=(p.note?'<small>'+e(p.note)+'</small>':'')+(p.principal_amount!=null?'<small>本金 '+money(p.principal_amount)+' ／ 利息 '+money(p.interest_amount)+'</small>':'');
          const paid=p.paid_on?'<b>'+e(p.paid_on.replaceAll('-','/'))+'</b> '+
            (Number(p.paid_amount)>0?money(Number(p.paid_amount)+Number(p.extra_principal)):'金額未填'): '—';
          const button=simple?'標記已繳':'登錄繳款';
@@ -460,6 +472,13 @@
     return heading+cards+filter+(list||'<section class="wff-panel">'+empty('目前還沒有每月繳款紀錄，新增後會自動產生每月繳款日期')+'</section>')+
       '<div class="wff-note">固定日例如 10/31 → 11/30 → 12/31，每月會恢復指定日期；所有標記需要手動確認，不會連動銀行帳單。</div>';
   }
+  function codeSummary(rows){
+    if(!S.codeSearch)return '';
+    return '<section class="wff-note wff-code-summary"><strong>代號「'+e(S.codeSearch)+'」統計</strong><p>依目前篩選條件加總全部頁面；代號不改變原記帳分類。轉帳與信用卡繳費備查不列入收支。</p>'+['family','business'].map(scope=>{
+      const sum=(kind,status)=>rows.filter(x=>x.scope===scope&&x.kind===kind&&x.payment_status===status).reduce((n,x)=>n+Number(x.amount||0),0);
+      return '<div><b>'+scopeName(scope)+'</b>　已入帳收入 '+money(sum('income','paid'))+'　已入帳支出 '+money(sum('expense','paid'))+'　待繳支出 '+money(sum('expense','unpaid'))+'</div>';
+    }).join('')+'</section>';
+  }
   function transactions() {
     const d=S.transactions || {items:[],page:1,pages:1,total:0};
     return '<div class="wff-pagehead"><div><div class="wff-kicker">LEDGER / 每筆都清楚</div><h1>收支 <span class="wff-highlight">紀錄</span></h1>'+
@@ -467,28 +486,31 @@
       '<section class="wff-panel"><div class="wff-toolbar">'+
       '<label>收支空間<select id="wff-scope"><option value="all">全部</option>'+
         '<option value="family" '+(S.scope==='family'?'selected':'')+'>家庭</option><option value="business" '+(S.scope==='business'?'selected':'')+'>公司</option></select></label>'+
-      '<label>類型<select id="wff-kind">'+[['all','全部'],['income','收入'],['expense','支出'],['transfer','轉帳']].map(x=>
+      '<label>類型<select id="wff-kind">'+[['all','全部'],['income','收入'],['expense','支出'],['transfer','轉帳'],['card_payment','信用卡繳費備查']].map(x=>
         '<option value="'+x[0]+'" '+(S.kind===x[0]?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></label>'+
       '<form class="wff-note-search" id="wff-note-search-form" role="search">'+
       '<label for="wff-note-search">備註搜尋</label>'+
       '<input id="wff-note-search" name="search" type="search" maxlength="100" placeholder="輸入備註關鍵字，例如卡費、好市多" value="'+e(S.noteSearch)+'">'+
+      '<label>統計代號<input name="code" type="search" maxlength="60" value="'+e(S.codeSearch)+'" placeholder="完整代號"></label>'+
+      '<label class="wff-checkline"><input name="all_months" type="checkbox" '+(S.codeAllMonths?'checked':'')+'> 跨月份查詢</label>'+
       '<button class="wff-button" type="submit">搜尋</button>'+
-      (S.noteSearch?'<button class="wff-textbtn" type="button" data-action="clear-note-search">清除</button>':'')+
+      (S.noteSearch||S.codeSearch||S.codeAllMonths?'<button class="wff-textbtn" type="button" data-action="clear-note-search">清除</button>':'')+
       '</form>'+
       (canEdit()?simpleBtn('＋ 新增一筆','new-transaction','wff-primary'):'')+'</div>'+
+      codeSummary(d.code_totals||[])+
       '<div class="wff-list-count">共 '+e(d.total)+' 筆 · 每頁最多 25 筆</div>'+
       (d.items.length?'<div class="wff-tablewrap"><table class="wff-transactions"><thead><tr>'+
-        '<th>日期</th><th>分類</th><th>備註</th><th>金額</th><th>類型</th><th>記帳人／帳戶</th>'+(isOwner()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
+        '<th>日期</th><th>分類</th><th>備註</th><th>金額</th><th>類型</th><th>記帳人／帳戶</th>'+(canEdit()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
         d.items.map(x=>'<tr><td>'+e(x.occurred_on)+'</td>'+
           '<td>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</td>'+
-          '<td>'+e(x.note||'—')+(x.statement_on?'<small>出帳 '+e(x.statement_on)+'</small>':'')+(x.payment_due_on?'<small>繳款期限 '+e(x.payment_due_on)+'</small>':'')+((x.subscription_id||x.loan_id||x.payment_status==='unpaid')?'<small class="wff-payment-state">繳費狀態 · '+(x.payment_status==='paid'?'已繳費':'未繳費')+'</small>':'')+'</td>'+
+          '<td>'+e(x.note||'—')+(x.tracking_code?'<small class="wff-code-tag">代號：'+e(x.tracking_code)+'</small>':'')+(x.kind==='card_payment'?'<small class="wff-payment-state">已繳費備查，不計入支出</small>':'')+(x.statement_on?'<small>'+(x.kind==='card_payment'&&!x.payment_due_on?'繳費月份 '+e(x.statement_on.slice(0,7)):'出帳 '+e(x.statement_on))+'</small>':'')+(x.payment_due_on?'<small>繳款期限 '+e(x.payment_due_on)+'</small>':'')+((x.subscription_id||x.loan_id||x.payment_status==='unpaid')?'<small class="wff-payment-state">繳費狀態 · '+(x.payment_status==='paid'?'已繳費':'未繳費')+'</small>':'')+'</td>'+
           '<td><strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></td>'+
           '<td><span class="wff-pill">'+scopeName(x.scope)+' · '+readable(x.kind)+'</span></td>'+
           '<td>'+e(x.creator_name||'—')+'<small>'+e([x.payment_channel_name,x.account_name].filter(Boolean).join(' · ')||'—')+'</small></td>'+
-          (canEdit()?'<td>'+((x.subscription_id||x.loan_id||x.payment_status==='unpaid')&&isOwner()?'<button type="button" class="wff-textbtn" data-action="subscription-paid" data-id="'+e(x.id)+'" data-paid="'+(x.payment_status==='paid'?'0':'1')+'">'+(x.payment_status==='paid'?'取消已繳':'標記已繳')+'</button>':'')+'<button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
+          (canEdit()?'<td>'+(x.card_payment_id?'<button type="button" class="wff-textbtn" data-action="edit-transaction" data-id="'+e(x.id)+'">修改繳費紀錄</button>':((x.subscription_id||x.loan_id||x.payment_status==='unpaid')&&isOwner()?'<button type="button" class="wff-textbtn" data-action="subscription-paid" data-id="'+e(x.id)+'" data-paid="'+(x.payment_status==='paid'?'0':'1')+'">'+(x.payment_status==='paid'?'取消已繳':'標記已繳')+'</button>':'')+'<button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
             (Number(x.has_receipt)?'<button class="wff-iconbutton" type="button" aria-label="查看收據" data-action="view-receipt" data-id="'+e(x.id)+'">📷</button>':'')+
             '<button class="wff-iconbutton" aria-label="複製此記帳，建立新的一筆" title="複製記帳" data-action="duplicate-transaction" data-id="'+e(x.id)+'">⧉</button>'+ 
-             '<button class="wff-iconbutton" aria-label="刪除" data-action="delete-transaction" data-id="'+e(x.id)+'">×</button></td>':'')+'</tr>').join('')+
+             '<button class="wff-iconbutton" aria-label="刪除" data-action="delete-transaction" data-id="'+e(x.id)+'">×</button>')+'</td>':'')+'</tr>').join('')+
         '</tbody></table></div>':empty('找不到符合條件的交易'))+
       '<div class="wff-pagination"><button class="wff-button" data-action="page-prev" '+(d.page<=1?'disabled':'')+'>← 上一頁</button>'+
         '<span>'+e(d.page)+' / '+e(d.pages)+' 頁</span>'+
@@ -512,12 +534,12 @@
       const detail=a.type==='credit' ?
        '<div class="wff-account-details"><span>固定出帳日　'+(a.statement_day?'每月 '+e(a.statement_day)+' 日':'未設定')+'</span>'+
        '<span>固定繳款日　'+(a.due_day?'每月 '+e(a.due_day)+' 日':'未設定')+'</span>'+
-       (period?'<span>本期帳單　'+e(period.starts_on)+' ～ '+e(period.statement_on)+'</span>'+
-         '<span>繳款期限　'+e(period.due_on)+'</span>'+
+       (period?'<span>本期帳單　'+(period.manual?e(period.statement_on.slice(0,7))+'（按月登記）':e(period.starts_on)+' ～ '+e(period.statement_on))+'</span>'+
+         '<span>繳款期限　'+e(period.due_on||'未設定，不影響繳費登記')+'</span>'+
          '<strong class="wff-card-paid-state" data-status="'+e(period.status)+'">'+
            (period.payment?'本期已繳 '+money(period.payment.amount)+' · '+e(period.payment.paid_on):
              (period.status==='overdue'?'本期尚未登記繳費（已過期限）':'本期尚未登記繳費'))+'</strong>':
-         '<span>設定固定出帳與繳款日後，即可逐期記錄是否已繳</span>')+'</div>' :
+         '<span>未設定固定日期，仍可按月份登記繳費</span>')+'</div>' :
        a.type==='mobile' ?
        '<div class="wff-account-details"><span>預設扣款　'+e(funding?.name||'未指定')+'</span></div>' :
        '<div class="wff-account-details"><span>付款工具已建立，可於記帳時選取</span></div>';
@@ -538,7 +560,7 @@
       (canEdit()?simpleBtn('＋ 新增付款工具','new-account','wff-primary'):'')+'</div>'+
       '<div class="wff-tool-tabs" role="group" aria-label="篩選付款工具">'+tabs+'</div>'+
       '<div class="wff-account-grid">'+(cardsHtml||'<div class="wff-chart-empty">尚無此類付款工具，請點右上角新增。</div>')+'</div>'+
-      '<div class="wff-note">行動支付刷卡仍只記一次支出。信用卡「本期已繳」只根據此處登記的實際繳費日期與金額判斷，不會新增第二筆支出或修改原有轉帳記帳；歷史轉帳也不會自動視為已繳。</div>';
+      '<div class="wff-note">行動支付刷卡仍只記一次支出。信用卡繳費會同步顯示於收支紀錄備查，不重複計入收入或支出，也不修改既有消費／轉帳紀錄。</div>';
   }
   function categories() {
     const cats=S.meta.categories||[];
@@ -606,8 +628,8 @@
   function activity() {
     return '<div class="wff-pagehead"><div><div class="wff-kicker">AUDIT / HISTORY</div><h1>操作 <span class="wff-highlight">紀錄</span></h1>'+
       '<p>查看最近 50 筆家庭成員異動及財務操作。</p></div></div><section class="wff-panel">'+
-      (S.activities.length?'<div class="wff-tablewrap"><table><thead><tr><th>時間（UTC）</th><th>成員</th><th>動作</th><th>資料 ID</th></tr></thead><tbody>'+
-        S.activities.map(x=>'<tr><td>'+e(x.created_at)+'</td><td>'+e(x.display_name)+'</td><td>'+e(x.action)+'</td><td>'+e(x.object_id)+'</td></tr>').join('')+
+      (S.activities.length?'<div class="wff-tablewrap"><table><thead><tr><th>時間（網站時區）</th><th>成員</th><th>做了什麼</th><th>說明</th></tr></thead><tbody>'+
+        S.activities.map(x=>'<tr><td>'+e(x.local_time||x.created_at)+'</td><td>'+e(x.display_name)+'</td><td>'+e(x.action_label||'資料異動')+'</td><td>'+e(x.details||x.description||('紀錄 #'+x.object_id))+'</td></tr>').join('')+
         '</tbody></table></div>':empty('還沒有操作紀錄'))+'</section>';
   }
   const dateLabel = value => {
@@ -627,6 +649,19 @@
   }
   // Transaction payment selection only replaces the dependent fields.
   // All metadata is already fetched; changing methods requires no AJAX/refetch.
+  function walletDefault(value){
+    const key='wff_wallet_'+(config.user?.id||config.user?.name||'')+'_'+S.hid;
+    try{if(value!==undefined)localStorage.setItem(key,JSON.stringify(value));return JSON.parse(localStorage.getItem(key)||'null');}catch{return null;}
+  }
+  function applyWalletDefault(data){
+    const wallets=activeAccounts('mobile'),last=walletDefault();
+    const wallet=wallets.find(x=>String(x.id)===String(last?.channel))||wallets[0];
+    if(!wallet)return data;
+    data.payment_channel_id=wallet.id;
+    const source=String(wallet.id)===String(last?.channel)?last.source:wallet.funding_account_id;
+    data.account_id=activeAccounts().some(x=>String(x.id)===String(source)&&['cash','bank','credit'].includes(x.type))?source:'';
+    return data;
+  }
   function transactionFields(d) {
     const scope=d.scope||'family',kind=d.kind||'expense',method=d.payment_method||'cash';
     const transfer=kind==='transfer';
@@ -646,7 +681,7 @@
     return (transfer?'<div class="wff-note">轉帳或信用卡還款不會重複計入收支。</div>':field('分類',categorySelect))+
       '<div data-transaction-method'+(transfer?' hidden':'')+'>'+field('付款方式','<select name="payment_method">'+selectValues([['cash','現金'],['card','信用卡'],['mobile','行動支付'],['bank','銀行帳戶'],['other','其他']],method)+'</select>')+'</div>'+
       (method==='mobile'&&!transfer?field('使用的行動支付','<select name="payment_channel_id" required>'+
-       options(wallets,d.payment_channel_id,'選擇 LINE Pay、Apple Pay 等')+'</select>'):'')+
+       options(wallets,d.payment_channel_id,'選擇 LINE Pay、Apple Pay 等')+'</select><small class="wff-small">選擇後即記住此瀏覽器的預設，不必先儲存記帳。</small>'):'')+
       '<div class="wff-form-grid">'+field(transfer?'轉出帳戶':method==='mobile'?'實際扣款來源':'付款／收款工具',
        '<select name="account_id">'+options(sources,d.account_id,
          transfer?'請選擇轉出帳戶':method==='mobile'?'扣款來源未指定':'選擇付款工具（選填）')+'</select>')+
@@ -659,11 +694,12 @@
     const data=getFormData(form);
     if(form.id==='wff-subscription-form')data.kind='expense';
     if(changed==='scope'||changed==='kind')data.category_id='';
-    if(changed==='payment_method'){data.payment_channel_id='';data.account_id='';}
+    if(changed==='payment_method'){data.payment_channel_id='';data.account_id='';if(data.payment_method==='mobile')applyWalletDefault(data);}
     if(changed==='payment_channel_id'){
       const wallet=(S.meta?.accounts||[]).find(a=>String(a.id)===String(data.payment_channel_id));
       data.account_id=wallet?.funding_account_id||'';
     }
+    if(data.payment_method==='mobile'&&data.payment_channel_id)walletDefault({channel:data.payment_channel_id,source:data.account_id||''});
     const block=form.querySelector('#wff-transaction-dynamic');
     if(block)block.innerHTML=transactionFields(data);
     const payment=form.querySelector('[data-transaction-method]');
@@ -688,7 +724,8 @@
         '<div class="wff-form-grid">'+
         field('日期',dateControl('occurred_on',d.occurred_on||new Date().toLocaleDateString('sv-SE')))+
         field('金額（NT$）','<input name="amount" type="number" step="1" min="1" required inputmode="numeric" value="'+e(d.amount||'')+'" placeholder="0">')+'</div>'+
-        field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例如：晚餐、主機年費">')+
+        '<div class="wff-form-grid">'+field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例如：晚餐、主機年費">')+
+        field('統計代號（選填）','<input name="tracking_code" maxlength="60" value="'+e(d.tracking_code||'')+'" placeholder="例如：仙台旅遊、裝修A">')+'</div>'+
         '<div id="wff-transaction-dynamic">'+transactionFields(d)+'</div>'+
         '<div class="wff-bill-dates"'+(d.kind==='transfer'?'':' hidden')+'>'+
         field('帳單出帳日期（選填）','<input type="date" name="statement_on" value="'+e(d.statement_on||'')+'">')+
@@ -726,7 +763,7 @@
        field('名稱','<input name="name" value="'+e(d.name||'')+'" maxlength="120" placeholder="例如：CX-5 車貸、房貸、信貸" required>')+
        '<div class="wff-form-grid">'+
        field(d.id?'調整後每月預計金額':'每月預計金額（選填）','<input name="monthly_payment" type="number" step=".01" min="0" value="'+e(Number(d.monthly_payment)||'')+'" placeholder="不確定可先留白">')+
-       field('每月固定繳款日',dateControl('first_due_on',d.first_due_on||new Date().toLocaleDateString('sv-SE')))+'</div>'+
+       field('每月固定繳款日（選填）',dateControl('first_due_on',d.first_due_on||new Date().toLocaleDateString('sv-SE')))+'</div>'+
        '<div class="wff-form-grid">'+
        field('所屬帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+
        field('銀行／貸款機構（選填）','<input name="lender" value="'+e(d.lender||'')+'" maxlength="120" placeholder="例如：玉山銀行">')+'</div>'+
@@ -743,13 +780,17 @@
       title='記錄 '+e(entry?.due_on?.slice(0,7).replace('-','/')||'本期')+' 繳款';
       body='<form id="wff-loan-payment-form" class="wff-form">'+
        '<div class="wff-note">'+e(loan?.name||'每月繳款')+' · 預定 '+e(entry?.due_on?.replaceAll('-','/')||'')+
-       '，確認扣款後再標記已繳。這裡不會另外新增一筆收支。</div>'+
+       '，確認扣款後再標記已繳。會同步對應期數的收支，提前繳款也只建立一筆對應紀錄。</div>'+
        '<input type="hidden" name="installment_no" value="'+e(d.installment_no)+'">'+
        '<div class="wff-form-grid">'+
        field('實際繳款日期',dateControl('paid_on',entry?.paid_on||new Date().toLocaleDateString('sv-SE')))+
-       field('實際繳款金額'+(simple?'（選填）':''),
-         '<input name="paid_amount" type="number" min="'+(simple?'0':'.01')+'" step=".01" '+(simple?'':'required')+
+       field('本金＋利息合計（可直接填總額）',
+         '<input name="paid_amount" type="number" min="'+(simple?'0':'.01')+'" step=".01" '+(simple?'':'required')+(entry?.principal_amount!=null?' readonly':'')+
          ' value="'+e(entry?.paid_on?entry.paid_amount:(Number(entry?.scheduled_amount)||''))+'" placeholder="可先不填">')+'</div>'+
+       '<div class="wff-form-grid">'+
+       field('本期本金（選填）','<input name="principal_amount" type="number" min="0" step=".01" value="'+e(entry?.principal_amount??'')+'" inputmode="decimal">')+
+       field('本期利息（選填）','<input name="interest_amount" type="number" min="0" step=".01" value="'+e(entry?.interest_amount??'')+'" inputmode="decimal">')+'</div>'+
+       '<p class="wff-small">填寫本金或利息時，自動合計；兩欄都留白可直接填繳款總額。</p>'+
        (simple?'':field('額外提前還本金（選填）','<input name="extra_principal" type="number" min="0" step=".01" value="'+e(entry?.extra_principal||'0')+'">'))+
        field('備註（選填）','<input name="note" maxlength="255" value="'+e(entry?.note||'')+'" placeholder="例如：銀行自動扣款、轉帳">')+
        '<button type="submit" class="wff-button wff-primary">確認已繳 ✓</button></form>';
@@ -773,9 +814,9 @@
         field('顯示排序','<input name="sort_order" type="number" min="0" max="100000" value="'+e(d.sort_order||0)+'">')+
         '</div>'+
         (kind==='credit'?'<div class="wff-form-grid">'+
-          field('每月固定結帳日','<input name="statement_day" type="number" min="1" max="31" required value="'+e(d.statement_day||'')+'" placeholder="1–31">')+
-          field('每月固定繳款日','<input name="due_day" type="number" min="1" max="31" required value="'+e(d.due_day||'')+'" placeholder="1–31">')+
-          '</div><p class="wff-small">每月自動依固定日期推算帳期；如果繳款日早於或等於結帳日，會排到下個月。29～31 日遇短月取當月最後一天。</p>':'')+
+          field('每月固定結帳日（選填）','<input name="statement_day" type="number" min="1" max="31" value="'+e(d.statement_day||'')+'" placeholder="1–31">')+
+          field('每月固定繳款日','<input name="due_day" type="number" min="1" max="31" value="'+e(d.due_day||'')+'" placeholder="1–31">')+
+          '</div><p class="wff-small">日期可先留白，直接按月記錄繳費。設定後自動推算帳期；如果繳款日早於或等於結帳日，會排到下個月。29～31 日遇短月取當月最後一天。</p>':'')+
         (kind==='mobile'?field('預設扣款來源','<select name="funding_account_id">'+options(sources,d.funding_account_id,'不指定，每次記帳時選擇')+'</select>'):'')+
         field('備註','<input name="notes" maxlength="255" value="'+e(d.notes||'')+'" placeholder="選填">')+
         '<label class="wff-checkline"><input type="checkbox" name="enabled" value="1" '+(Number(d.enabled)===0?'':'checked')+'> 啟用此付款工具</label>'+
@@ -783,24 +824,30 @@
     } else if(type==='card-payment'){
       const card=(S.meta?.accounts||[]).find(a=>Number(a.id)===Number(d.card_id));
       const period=d.period||{},payment=period.payment;
+      const manual=!!period.manual||!card?.statement_day||!card?.due_day;
       title=(payment?'修改':'登記')+'信用卡繳費';
       body='<div class="wff-note"><strong>'+e(card?.name||'信用卡')+'</strong>'+
-        '<div>本期消費帳期：'+e(period.starts_on)+' ～ '+e(period.statement_on)+'</div>'+
-        '<div>預定繳款日：'+e(period.due_on)+'</div>'+
-        '<div>只登記這一期是否已繳，不會新增收支、轉帳，也不會重複扣除信用卡費。</div></div>'+
-        '<form class="wff-form" id="wff-card-payment-form"><div class="wff-form-grid">'+
+        '<div>'+(manual?'按月份登記，可不設定固定出帳／繳款日期。':'本期消費帳期：'+e(period.starts_on)+' ～ '+e(period.statement_on))+'</div>'+
+        '<div>預定繳款日：'+e(period.due_on||'未設定')+'</div>'+
+        '<div>儲存後會在收支紀錄建立繳費備查，不會重複計入收入或支出。</div></div>'+
+        '<form class="wff-form" id="wff-card-payment-form">'+
+        (manual&&!payment?field('繳費月份','<input name="billing_month" type="month" required value="'+e(period.statement_on?.slice(0,7)||new Date().toLocaleDateString('sv-SE').slice(0,7))+'">'):'')+
+        field('帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],payment?.scope||'family')+'</select>')+
+        '<div class="wff-form-grid">'+
         field('實際繳費日期',dateControl('paid_on',payment?.paid_on||S.cardPayments?.today||new Date().toLocaleDateString('sv-SE')))+
-        field('實際繳費金額（NT$）','<input name="amount" type="number" step=".01" min=".01" required inputmode="decimal" value="'+e(payment?.amount||'')+'" placeholder="輸入本次繳費金額">')+
-        '</div><button type="submit" class="wff-button wff-primary">確認本期已繳 ✓</button></form>'+
+        field('實際繳費金額（NT$）','<input name="amount" type="number" step=".01" min=".01" required inputmode="decimal" value="'+e(payment?.amount||'')+'" placeholder="輸入本次繳費金額">')+'</div>'+
+        field('備註','<input name="note" maxlength="255" value="'+e(payment?.note||'')+'">')+
+        field('統計代號（選填）','<input name="tracking_code" maxlength="60" value="'+e(payment?.tracking_code||'')+'">')+
+        '<button type="submit" class="wff-button wff-primary">確認本期已繳</button></form>'+
         (payment&&canEdit()?'<button type="button" class="wff-textbtn" data-action="delete-card-payment" data-id="'+e(payment.id)+'">取消本期已繳紀錄</button>':'');
     } else if(type==='card-history'){
       const card=(S.meta?.accounts||[]).find(a=>Number(a.id)===Number(d.card_id));
       const periods=S.cardPayments?.cards?.[d.card_id]?.periods||[];
       title=(card?.name||'信用卡')+' · 最近 12 期';
       body='<div class="wff-card-history">'+periods.map(period=>
-        '<div class="wff-card-history-row"><div><strong>'+e(period.statement_on)+' 結帳</strong>'+
+        '<div class="wff-card-history-row"><div><strong>'+e(period.statement_on)+(period.manual?' 月份紀錄':' 結帳')+'</strong>'+
         '<small>帳期 '+e(period.starts_on)+' ～ '+e(period.statement_on)+'</small>'+
-        '<small>繳款期限 '+e(period.due_on)+'</small>'+
+        '<small>繳款期限 '+e(period.due_on||'未設定')+'</small>'+
         '<span class="wff-card-paid-state" data-status="'+e(period.status)+'">'+
         (period.payment?'已繳 '+money(period.payment.amount)+' · '+e(period.payment.paid_on):
          (period.status==='overdue'?'尚未登記（已過期限）':'尚未登記'))+'</span></div>'+
@@ -818,9 +865,16 @@
     }
     return '<div class="wff-overlay" role="presentation"><section class="wff-modal" role="dialog" aria-modal="true" aria-label="'+e(title)+'">'+
       '<div class="wff-modal-head"><div class="wff-kicker">FINANCE / EDIT</div><h2>'+e(title)+'</h2>'+
-      '<button class="wff-modal-close" data-action="close-modal" aria-label="關閉" type="button">×</button></div>'+body+'</section></div>';
+      '<button class="wff-modal-close" data-action="close-modal" aria-label="關閉" type="button">×</button></div><div class="wff-modal-notice wff-alert" role="status" hidden></div>'+body+'</section></div>';
   }
-  function render() {
+  function render(force=false) {
+    const editor=root.querySelector('.wff-overlay');
+    if(!force && S.modal && editor && editor.dataset.epoch===String(S.modalEpoch)){
+      root.querySelector('#wff-main > .wff-alert')?.remove();
+      const notice=editor.querySelector('.wff-modal-notice');
+      if(notice){notice.textContent=S.notice;notice.hidden=!S.notice;}
+      return;
+    }
     const action=authParams().get('wff_action');
     if (S.invitationError) { root.innerHTML=invalidInvitationView(); return; }
     if (action==='forgot') { root.innerHTML=forgotView(); return; }
@@ -832,6 +886,7 @@
       dashboard,transactions,loans,subscriptions,accounts,categories,members,import:importView,activity
     })[S.view]();
     root.innerHTML=header()+content+footer()+modal();
+    const overlay=root.querySelector('.wff-overlay');if(overlay)overlay.dataset.epoch=String(S.modalEpoch);
     document.body.classList.toggle('wff-dialog-open',!!S.modal);
   }
   async function go(view) {
@@ -849,12 +904,12 @@
   }
   function openModal(type,item) {
     clearReceiptDraft();
-    S.modal=type;S.draft={...(item||{})};render();
+    S.modalEpoch++;S.notice='';S.modal=type;S.draft={...(item||{})};render(true);
     if(S.modal)requestAnimationFrame(()=>root.querySelector('.wff-modal-close')?.focus({preventScroll:true}));
   }
   function resetModal() {
     clearReceiptDraft();
-    S.modal=null;S.draft={};render();
+    S.modalEpoch++;S.modal=null;S.draft={};render();
   }
   function getFormData(form) { return Object.fromEntries(new FormData(form).entries()); }
   const receiptMaxBytes = 5 * 1024 * 1024;
@@ -1040,10 +1095,14 @@
     }
     if(act==='remove-receipt' && confirm('確定移除已存收據照片？')){
       attempt(async()=>{await request(path('transactions/'+id+'/receipt'),'DELETE');
-        S.draft.has_receipt=0;render();show('已移除收據');});
+        S.draft={...S.draft,...getFormData(root.querySelector('.wff-modal form')),has_receipt:0};render(true);show('已移除收據');});
     }
-    if(act==='edit-transaction'&&item){openModal('transaction',item);}
-    if(act==='duplicate-transaction'&&item){
+    if(act==='edit-transaction'&&item){
+      if(item.card_payment_id){
+        openModal('card-payment',{card_id:Number(item.account_id),period:{statement_on:item.statement_on,starts_on:item.statement_on,due_on:item.payment_due_on,manual:!item.payment_due_on,payment:{id:Number(item.card_payment_id),paid_on:item.occurred_on,amount:item.amount,scope:item.scope,note:item.card_note||'',tracking_code:item.tracking_code}}});
+      }else openModal('transaction',item);
+    }
+    if(act==='duplicate-transaction'&&item&&!item.card_payment_id){
       const copy={...item};
       delete copy.id; delete copy.created_at; delete copy.updated_at;
       delete copy.creator_name; delete copy.created_by;
@@ -1069,7 +1128,7 @@
     if(act==='card-history'){
       if(S.cardPayments?.cards?.[id]?.periods?.length)openModal('card-history',{card_id:id});
     }
-    if(act==='delete-card-payment'&&canEdit()&&confirm('確定要取消這期「已繳」的標記嗎？此操作只刪除繳費紀錄，不影響其他記帳。')){
+    if(act==='delete-card-payment'&&canEdit()&&confirm('確定取消本期已繳？對應的繳費備查會同步移除，原消費記帳不變。')){
       attempt(async()=>{
         await request(path('card-payments/'+id),'DELETE');
         resetModal();await reload();show('已取消本期已繳紀錄');
@@ -1144,7 +1203,7 @@
     if(act==='remove-member'&&confirm('確定移除這位家庭成員？')) {
       attempt(async()=>{await request(path('members/'+id),'DELETE');await reload();show('已移除成員');});
     }
-    if(act==='clear-note-search'){S.noteSearch='';S.page=1;attempt(reload);}
+    if(act==='clear-note-search'){S.noteSearch='';S.codeSearch='';S.codeAllMonths=false;S.page=1;attempt(reload);}
     if(act==='page-prev'&&S.page>1){S.page--;attempt(reload);}
     if(act==='page-next'&&S.page<S.transactions.pages){S.page++;attempt(reload);}
     if(act==='export'){attempt(exportCSV);}
@@ -1161,13 +1220,16 @@
       const preview=area?.querySelector('.wff-receipt-preview');
       if(!file)return;
       clearReceiptDraft();
+      const epoch=S.modalEpoch;
       if(progress)progress.textContent='正在縮小並壓縮為 JPG…';
       S.receiptProcessing=compressReceipt(file).then(compressed=>{
+        if(epoch!==S.modalEpoch||!S.modal)return;
         S.receiptFile=compressed;
         S.receiptPreviewUrl=URL.createObjectURL(compressed);
         if(preview)preview.innerHTML='<img alt="收據預覽" src="'+e(S.receiptPreviewUrl)+'">';
         if(progress)progress.textContent='已壓縮為 JPG，'+(compressed.size/1024/1024).toFixed(2)+' MB，儲存記帳時一起上傳';
       }).catch(error=>{
+        if(epoch!==S.modalEpoch||!S.modal)return;
         S.receiptFile=null;
         input.value='';
         if(progress)progress.textContent=error.message||'圖片轉檔失敗';
@@ -1177,6 +1239,7 @@
       S.receiptProcessing.catch(()=>{});
     }
     const t=ev.target;
+    if(t.name==='account_id' && t.form?.elements.payment_method?.value==='mobile')walletDefault({channel:t.form.elements.payment_channel_id.value,source:t.value});
     if(t.matches('.wff-date-control input[type="date"]')){
       const label=t.closest('.wff-date-control')?.querySelector('.wff-date-label');
       if(label)label.textContent=dateLabel(t.value);
@@ -1196,14 +1259,23 @@
       if(file.size>1048576) {show('CSV 不可超過 1MB');return;}
       file.text().then(text=>{S.csv=text;S.csvName=file.name;S.importPreview=null;render();}).catch(()=>show('CSV 讀取失敗'));
     }
-    if(S.modal==='account' && t.name==='type') {S.draft={...S.draft,...getFormData(t.form),enabled:t.form.querySelector('[name="enabled"]').checked?1:0};render();return;}
+    if(S.modal==='account' && t.name==='type') {S.draft={...S.draft,...getFormData(t.form),enabled:t.form.querySelector('[name="enabled"]').checked?1:0};render(true);return;}
     if(['transaction','subscription'].includes(S.modal) && ['wff-transaction-form','wff-subscription-form'].includes(t.form?.id) &&
       ['scope','kind','payment_method','payment_channel_id'].includes(t.name)) {
-      refreshTransactionFields(t.form,t.name);
-      const bills=t.form.querySelector('.wff-bill-dates');if(bills)bills.hidden=t.form.elements.kind.value!=='transfer';
+      const form=t.form;
+      refreshTransactionFields(form,t.name);
+      const bills=form.querySelector('.wff-bill-dates');if(bills)bills.hidden=form.elements.kind.value!=='transfer';
     }
     if(S.modal==='transaction' && t.name==='category_id' && t.form?.id==='wff-transaction-form') {
       updateCategorySelect(t.form);
+    }
+  });
+  root.addEventListener('input',ev=>{
+    const form=ev.target.form;
+    if(form?.id==='wff-loan-payment-form'&&['principal_amount','interest_amount'].includes(ev.target.name)){
+      const p=form.elements.principal_amount.value,i=form.elements.interest_amount.value,total=form.elements.paid_amount;
+      total.readOnly=p!==''||i!=='';
+      if(total.readOnly)total.value=(Number(p||0)+Number(i||0)).toFixed(2);
     }
   });
   root.addEventListener('submit', ev => {
@@ -1237,6 +1309,7 @@
     ev.preventDefault();
     if(form.id==='wff-note-search-form'){
       S.noteSearch=(getFormData(form).search||'').trim().slice(0,100);
+      const searchData=getFormData(form);S.codeSearch=(searchData.code||'').trim().slice(0,60);S.codeAllMonths=!!searchData.all_months;
       S.page=1;attempt(reload);return;
     }
     if(form.id==='wff-household-form'){
@@ -1297,7 +1370,7 @@
         const period=S.draft.period;
         if(!period||!S.draft.card_id)throw new Error('找不到信用卡帳期，請重新開啟');
         await request(path('card-payments'),'POST',{
-          account_id:S.draft.card_id,statement_on:period.statement_on,
+          account_id:S.draft.card_id,statement_on:period.statement_on,payment_id:period.payment?.id||0,
           ...getFormData(form)
         });
         resetModal();await reload();show('本期信用卡已登記繳費');
@@ -1308,7 +1381,7 @@
         resetModal();await reload();show('帳戶儲存成功');});
     }
     if(form.id==='wff-invite-form'){
-      attempt(async()=>{const result=await request(path('invite'),'POST',getFormData(form));S.draft={...S.draft,...result};render();});
+      attempt(async()=>{const result=await request(path('invite'),'POST',getFormData(form));S.draft={...S.draft,...getFormData(form),...result};render(true);});
     }
     if(form.id==='wff-import-form'){
       attempt(async()=>{

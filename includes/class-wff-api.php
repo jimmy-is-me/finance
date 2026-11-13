@@ -171,9 +171,10 @@ final class WFF_API {
         $a = WFF_Storage::table('accounts');
         $u = $wpdb->users;
         $receipt_table = WFF_Storage::table('receipts');
+        $card_table=WFF_Storage::table('card_payments');
         $where = "t.household_id=%d";
         $params = array($hid);
-        if (!empty($filters['month'])) {
+        if (!empty($filters['month']) && $filters['month'] !== 'all') {
             $where .= " AND t.occurred_on LIKE %s";
             $params[] = self::month($filters['month']) . '%';
         }
@@ -188,7 +189,7 @@ final class WFF_API {
             $where .= " AND t.scope=%s";
             $params[] = $filters['scope'];
         }
-        if (in_array($filters['kind'] ?? '', array('income','expense','transfer'), true)) {
+        if (in_array($filters['kind'] ?? '', array('income','expense','transfer','card_payment'), true)) {
             $where .= " AND t.kind=%s";
             $params[] = $filters['kind'];
         }
@@ -199,12 +200,19 @@ final class WFF_API {
             $where .= " AND t.note LIKE %s";
             $params[] = '%' . $wpdb->esc_like($keyword) . '%';
         }
+        $code=mb_substr(trim((string)($filters['code']??'')),0,60);
+        if($code!==''){$where.=" AND t.tracking_code=%s";$params[]=$code;}
+        // Aggregate BEFORE pagination; household and company remain separate.
+        $code_totals=$code!==''?$wpdb->get_results($wpdb->prepare(
+            "SELECT t.scope,t.kind,t.payment_status,COUNT(*) count,COALESCE(SUM(t.amount),0) amount FROM $t t WHERE $where GROUP BY t.scope,t.kind,t.payment_status",$params
+        ),ARRAY_A):array();
         $count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $t t WHERE $where", $params));
         $params[] = $limit;
         $params[] = $offset;
         $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT t.*,(SELECT COUNT(*) FROM $receipt_table rr WHERE rr.household_id=t.household_id AND rr.transaction_id=t.id) AS has_receipt,c.name AS category_name,c.color AS category_color,a.name AS account_name,d.name AS destination_account_name,w.name AS payment_channel_name,u.display_name AS creator_name
+            "SELECT t.*,cp.note AS card_note,(SELECT COUNT(*) FROM $receipt_table rr WHERE rr.household_id=t.household_id AND rr.transaction_id=t.id) AS has_receipt,c.name AS category_name,c.color AS category_color,a.name AS account_name,d.name AS destination_account_name,w.name AS payment_channel_name,u.display_name AS creator_name
              FROM $t t
+             LEFT JOIN $card_table cp ON cp.id=t.card_payment_id AND cp.household_id=t.household_id
              LEFT JOIN $cat c ON c.id=t.category_id AND c.household_id=t.household_id
              LEFT JOIN $a a ON a.id=t.account_id AND a.household_id=t.household_id
              LEFT JOIN $a d ON d.id=t.destination_account_id AND d.household_id=t.household_id
@@ -212,7 +220,7 @@ final class WFF_API {
              LEFT JOIN $u u ON u.ID=t.created_by
              WHERE $where ORDER BY t.occurred_on DESC,t.id DESC LIMIT %d OFFSET %d", $params
         ), ARRAY_A);
-        return array('items' => $rows, 'total' => $count);
+        return array('items' => $rows, 'total' => $count, 'code_totals'=>$code_totals);
     }
 
     public static function transactions($r) {
@@ -221,7 +229,8 @@ final class WFF_API {
         if (is_wp_error($role)) { return $role; }
         $page = max(1, min(100000, (int) $r->get_param('page') ?: 1));
         $per = max(5, min(100, (int) $r->get_param('per_page') ?: 30));
-        $filters = array('month' => $r->get_param('month'), 'scope' => $r->get_param('scope'), 'kind' => $r->get_param('kind'), 'search' => $r->get_param('search'));
+        $filters = array('month' => $r->get_param('month'), 'scope' => $r->get_param('scope'), 'kind' => $r->get_param('kind'), 'search' => $r->get_param('search'),'code'=>$r->get_param('code'));
+        self::sync_card_payment_ledger($hid);
         WFF_Subscriptions::generate($hid);
         WFF_Loans::generate($hid);
         $rows = self::entries($hid, $filters, $per, ($page - 1) * $per);
@@ -238,10 +247,11 @@ final class WFF_API {
         $t = WFF_Storage::table('transactions');
         $id = (int) $r->get_param('id');
         $original_tx = $id ? $wpdb->get_row($wpdb->prepare(
-            "SELECT id,payment_method,account_id,destination_account_id,payment_channel_id,kind,loan_id,scope,payment_status,amount
+            "SELECT id,payment_method,account_id,destination_account_id,payment_channel_id,kind,loan_id,card_payment_id,scope,payment_status,amount
              FROM $t WHERE id=%d AND household_id=%d", $id, $hid
         ), ARRAY_A) : null;
         if ($id && !$original_tx) { return self::error('找不到此交易', 404); }
+        if(!empty($original_tx['card_payment_id']))return self::error('信用卡繳費備查請從繳費視窗修改');
         $date = self::date($r->get_param('occurred_on'));
         $scope = self::clean_scope($r->get_param('scope'));
         $kind = sanitize_key($r->get_param('kind'));
@@ -329,6 +339,7 @@ final class WFF_API {
             'household_id' => $hid, 'occurred_on' => $date, 'scope' => $scope,
             'kind' => $kind, 'category_id' => $cat_id, 'amount' => $amount,
             'note' => mb_substr(sanitize_text_field($r->get_param('note')), 0, 255),
+            'tracking_code'=>mb_substr(trim(sanitize_text_field($r->get_param('tracking_code'))),0,60),
             'payment_method' => $pay, 'account_id' => $account,
             'payment_channel_id' => $channel,
             'destination_account_id' => $kind === 'transfer' ? $dest : null,
@@ -353,6 +364,8 @@ final class WFF_API {
         $role = self::role($hid, 'editor');
         if (is_wp_error($role)) { return $role; }
         $id = (int) $r['id'];
+        $table=WFF_Storage::table('transactions');
+        if($wpdb->get_var($wpdb->prepare("SELECT card_payment_id FROM $table WHERE household_id=%d AND id=%d",$hid,$id)))return self::error('請從信用卡繳費視窗取消，備查會同步移除');
         $deleted = $wpdb->delete(WFF_Storage::table('transactions'), array('id' => $id, 'household_id' => $hid));
         if (!$deleted) { return self::error('找不到此交易', 404); }
         $cleanup=WFF_Private_Receipts::remove($hid,$id);
@@ -560,13 +573,10 @@ final class WFF_API {
                 }
             }
         }
-        if ($type==='credit' && (!$statement || !$due)) {
-            return self::error('信用卡請設定固定結帳日與固定繳款日');
-        }
         if ($original && $original['type']==='credit') {
             $payments = WFF_Storage::table('card_payments');
             $has_history = (int)$wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM $payments WHERE household_id=%d AND account_id=%d", $hid, $id
+                "SELECT COUNT(*) FROM $payments WHERE household_id=%d AND account_id=%d AND is_manual=0", $hid, $id
             ));
             if ($has_history && ($type!=='credit' ||
                 (int)$original['statement_day'] !== (int)$statement ||
@@ -611,105 +621,131 @@ final class WFF_API {
      */
     public static function card_payments($r) {
         global $wpdb;
-        $hid = (int)$r['hid'];
-        $role = self::role($hid);
-        if (is_wp_error($role)) { return $role; }
-        $accounts = WFF_Storage::table('accounts');
-        $payments = WFF_Storage::table('card_payments');
-        $cards = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, statement_day, due_day FROM $accounts WHERE household_id=%d AND type='credit'",
-            $hid
-        ), ARRAY_A);
-        $today = wp_date('Y-m-d');
-        $earliest = (new DateTimeImmutable($today))->modify('-26 months')->format('Y-m-d');
-        $saved = $wpdb->get_results($wpdb->prepare(
-            "SELECT id,account_id,statement_on,due_on,paid_on,amount FROM $payments
-             WHERE household_id=%d AND statement_on >= %s ORDER BY statement_on DESC",
-            $hid, $earliest
-        ), ARRAY_A);
-        $by_card = array();
-        foreach ($saved ?: array() as $item) {
-            $by_card[(int)$item['account_id']][$item['statement_on']] = array(
-                'id'=>(int)$item['id'],
-                'paid_on'=>$item['paid_on'],
-                'amount'=>(float)$item['amount'],
-            );
+        $hid=(int)$r['hid'];$role=self::role($hid);
+        if(is_wp_error($role))return $role;
+        $accounts=WFF_Storage::table('accounts');$payments=WFF_Storage::table('card_payments');
+        $cards=$wpdb->get_results($wpdb->prepare("SELECT id,statement_day,due_day FROM $accounts WHERE household_id=%d AND type='credit'",$hid),ARRAY_A);
+        $today=wp_date('Y-m-d');$earliest=(new DateTimeImmutable($today))->modify('-26 months')->format('Y-m-01');
+        $saved=$wpdb->get_results($wpdb->prepare("SELECT * FROM $payments WHERE household_id=%d AND statement_on >= %s ORDER BY statement_on DESC",$hid,$earliest),ARRAY_A);
+        $by_card=array();$by_month=array();
+        foreach($saved?:array() as $item){
+            $item['id']=(int)$item['id'];$item['amount']=(float)$item['amount'];
+            $by_card[(int)$item['account_id']][$item['statement_on']]=$item;
+            if(!empty($item['is_manual']))$by_month[(int)$item['account_id']][substr($item['statement_on'],0,7)]=$item;
         }
-        $out = array();
-        foreach ($cards ?: array() as $card) {
-            $id = (int)$card['id'];
-            $configured = !empty($card['statement_day']) && !empty($card['due_day']);
-            $periods = array();
-            if ($configured) {
-                foreach (WFF_Card_Cycles::periods((int)$card['statement_day'], (int)$card['due_day'], $today, 12) as $period) {
-                    $payment = $by_card[$id][$period['statement_on']] ?? null;
-                    $period['payment'] = $payment;
-                    $period['status'] = $payment ? 'paid' : ($today > $period['due_on'] ? 'overdue' : 'pending');
-                    $periods[] = $period;
+        $out=array();
+        foreach($cards?:array() as $card){
+            $id=(int)$card['id'];$configured=!empty($card['statement_day'])&&!empty($card['due_day']);
+            $periods=array();
+            if($configured)$calendar=WFF_Card_Cycles::periods((int)$card['statement_day'],(int)$card['due_day'],$today,12);
+            else{
+                $calendar=array();
+                for($i=0;$i<12;$i++){
+                    $month=WFF_Card_Cycles::month_offset(substr($today,0,7),-$i);
+                    $calendar[]=array('statement_on'=>$month.'-01','starts_on'=>$month.'-01','due_on'=>null,'manual'=>true);
                 }
             }
-            $out[$id] = array('configured'=>$configured, 'periods'=>$periods);
+            foreach($calendar as $period){
+                $payment=$by_card[$id][$period['statement_on']]??($by_month[$id][substr($period['statement_on'],0,7)]??null);
+                $period['payment']=$payment;
+                $period['status']=$payment?'paid':(!empty($period['due_on'])&&$today>$period['due_on']?'overdue':'pending');
+                $periods[]=$period;
+            }
+            $out[$id]=array('configured'=>$configured,'periods'=>$periods);
         }
-        return array('cards'=>$out, 'today'=>$today);
+        return array('cards'=>$out,'today'=>$today);
     }
 
-    /** The only user inputs are the cycle, actual paid date and paid amount. */
-    public static function save_card_payment($r) {
+    /** Mirror a receipt of card payment as a non-expense ledger reference. */
+    private static function write_card_payment_entry($hid,$payment_id){
         global $wpdb;
-        $hid = (int)$r['hid'];
-        $role = self::role($hid, 'editor');
-        if (is_wp_error($role)) { return $role; }
-        $card_id = (int)$r->get_param('account_id');
-        $accounts = WFF_Storage::table('accounts');
-        $card = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, statement_day, due_day FROM $accounts
-             WHERE household_id=%d AND id=%d AND type='credit'",
-            $hid, $card_id
-        ), ARRAY_A);
-        if (!$card) { return self::error('找不到這張家庭信用卡', 404); }
-        if (empty($card['statement_day']) || empty($card['due_day'])) {
-            return self::error('請先設定信用卡每月固定結帳日與繳款日');
+        $p=WFF_Storage::table('card_payments');$a=WFF_Storage::table('accounts');$t=WFF_Storage::table('transactions');
+        $row=$wpdb->get_row($wpdb->prepare("SELECT p.*,a.name AS card_name FROM $p p INNER JOIN $a a ON a.id=p.account_id AND a.household_id=p.household_id WHERE p.id=%d AND p.household_id=%d",$payment_id,$hid),ARRAY_A);
+        if(!$row)return false;
+        $data=array('household_id'=>$hid,'occurred_on'=>$row['paid_on'],'scope'=>$row['scope'],'kind'=>'card_payment','category_id'=>null,
+            'amount'=>$row['amount'],'note'=>mb_substr($row['card_name'].' · '.substr($row['statement_on'],0,7).' 信用卡繳費備查'.($row['note']?' · '.$row['note']:''),0,255),
+            'tracking_code'=>$row['tracking_code'],'payment_status'=>'paid','card_payment_id'=>$payment_id,'statement_on'=>$row['statement_on'],'payment_due_on'=>$row['due_on'],
+            'payment_method'=>'bank','account_id'=>$row['account_id'],'destination_account_id'=>null,'payment_channel_id'=>null,'created_by'=>$row['created_by'],'created_at'=>$row['created_at'],'updated_at'=>$row['updated_at']);
+        $id=$wpdb->get_var($wpdb->prepare("SELECT id FROM $t WHERE household_id=%d AND card_payment_id=%d",$hid,$payment_id));
+        if($id)return $wpdb->update($t,$data,array('id'=>$id,'household_id'=>$hid))!==false;
+        if($wpdb->insert($t,$data)!==false)return true;
+        // A simultaneous backfill may have inserted the unique reference first.
+        $id=$wpdb->get_var($wpdb->prepare("SELECT id FROM $t WHERE household_id=%d AND card_payment_id=%d",$hid,$payment_id));
+        return $id&&$wpdb->update($t,$data,array('id'=>$id,'household_id'=>$hid))!==false;
+    }
+    public static function sync_card_payment_ledger($hid){
+        global $wpdb;
+        $p=WFF_Storage::table('card_payments');$t=WFF_Storage::table('transactions');
+        $rows=$wpdb->get_results($wpdb->prepare("SELECT p.id,p.account_id FROM $p p LEFT JOIN $t t ON t.card_payment_id=p.id AND t.household_id=p.household_id WHERE p.household_id=%d AND t.id IS NULL ORDER BY p.id LIMIT 50",$hid),ARRAY_A);
+        foreach($rows?:array() as $row){
+            $lock='wff_card_'.md5($wpdb->prefix.$hid.'_'.(int)$row['account_id']);
+            if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s,0)',$lock))!==1)continue;
+            try{self::write_card_payment_entry($hid,(int)$row['id']);}
+            finally{$wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)',$lock));}
         }
-        $statement = self::date($r->get_param('statement_on'));
-        $paid_on = self::date($r->get_param('paid_on'));
-        $amount = self::amount($r->get_param('amount'));
-        $today = wp_date('Y-m-d');
-        if (!$statement || !$paid_on || !$amount) {
-            return self::error('請填寫正確的帳期、實際繳費日期與金額');
-        }
-        if ($paid_on > $today) { return self::error('實際繳費日期不能晚於今天'); }
-        $cycle = null;
-        foreach (WFF_Card_Cycles::periods((int)$card['statement_day'], (int)$card['due_day'], $today, 24) as $item) {
-            if ($item['statement_on'] === $statement) { $cycle = $item; break; }
-        }
-        if (!$cycle) { return self::error('帳期與固定結帳日不符，或超過可登記的歷史範圍'); }
-        $payments = WFF_Storage::table('card_payments');
-        $now = current_time('mysql', true);
-        // Atomic UPSERT: one paid marker per card + statement close date.
-        // This deliberately never inserts transfer/expense records.
-        $ok = $wpdb->query($wpdb->prepare(
-            "INSERT INTO $payments (household_id,account_id,statement_on,due_on,paid_on,amount,created_by,created_at,updated_at)
-             VALUES (%d,%d,%s,%s,%s,%s,%d,%s,%s)
-             ON DUPLICATE KEY UPDATE due_on=VALUES(due_on),paid_on=VALUES(paid_on),
-             amount=VALUES(amount),updated_at=VALUES(updated_at)",
-            $hid, $card_id, $statement, $cycle['due_on'], $paid_on,
-            $amount, get_current_user_id(), $now, $now
-        ));
-        if ($ok === false) { return self::error('信用卡繳費紀錄儲存失敗',500); }
-        WFF_Storage::activity($hid, 'save_card_payment', $card_id, $statement);
-        return array('saved'=>true);
     }
 
-    public static function delete_card_payment($r) {
+    public static function save_card_payment($r){
         global $wpdb;
-        $hid = (int)$r['hid'];
-        $role = self::role($hid, 'editor');
-        if (is_wp_error($role)) { return $role; }
-        $id = (int)$r['id'];
-        $table = WFF_Storage::table('card_payments');
-        $deleted = $wpdb->delete($table, array('id'=>$id, 'household_id'=>$hid));
-        if (!$deleted) { return self::error('找不到信用卡繳費紀錄',404); }
-        WFF_Storage::activity($hid, 'delete_card_payment', $id);
+        $hid=(int)$r['hid'];$role=self::role($hid,'editor');if(is_wp_error($role))return $role;
+        $card_id=(int)$r->get_param('account_id');$accounts=WFF_Storage::table('accounts');$table=WFF_Storage::table('card_payments');
+        $card=$wpdb->get_row($wpdb->prepare("SELECT id,statement_day,due_day FROM $accounts WHERE household_id=%d AND id=%d AND type='credit'",$hid,$card_id),ARRAY_A);
+        if(!$card)return self::error('找不到這張家庭信用卡',404);
+        $paid_on=self::date($r->get_param('paid_on'));$amount=self::amount($r->get_param('amount'));$today=wp_date('Y-m-d');
+        if(!$paid_on||!$amount)return self::error('請填寫實際繳費日期與正數金額');
+        if($paid_on>$today)return self::error('實際繳費日期不能晚於今天');
+        $payment_id=(int)$r->get_param('payment_id');$old=null;
+        if($payment_id){
+            $old=$wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id=%d AND household_id=%d AND account_id=%d",$payment_id,$hid,$card_id),ARRAY_A);
+            if(!$old)return self::error('找不到此卡的繳費紀錄',404);
+            $statement=$old['statement_on'];$due=$old['due_on'];$manual=(int)$old['is_manual'];
+        }elseif(!empty($card['statement_day'])&&!empty($card['due_day'])){
+            $statement=self::date($r->get_param('statement_on'));$cycle=null;
+            foreach(WFF_Card_Cycles::periods((int)$card['statement_day'],(int)$card['due_day'],$today,24) as $item){if($item['statement_on']===$statement){$cycle=$item;break;}}
+            if(!$cycle)return self::error('帳期與固定出帳日不符，請重新選擇帳期');
+            $due=$cycle['due_on'];$manual=0;
+        }else{
+            $month=(string)$r->get_param('billing_month');
+            if($month==='')$month=substr((string)$r->get_param('statement_on'),0,7);
+            if(!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/',$month)||$month>substr($today,0,7))return self::error('請選擇本月或較早的繳費月份');
+            $statement=$month.'-01';$due=null;$manual=1;
+        }
+        $scope=self::clean_scope($r->get_param('scope')?:($old['scope']??'family'));
+        if(!$scope)return self::error('請選擇家庭或公司帳本');
+        $lock='wff_card_'.md5($wpdb->prefix.$hid.'_'.$card_id);
+        if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s,5)',$lock))!==1)return self::error('此信用卡正在更新，請稍後重試',409);
+        try{
+            $wpdb->query('START TRANSACTION');
+            if(!$old){
+                $old=$wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE household_id=%d AND account_id=%d AND (statement_on=%s OR (is_manual=1 AND statement_on LIKE %s)) ORDER BY id LIMIT 1",$hid,$card_id,$statement,substr($statement,0,7).'%'),ARRAY_A);
+                if($old){$payment_id=(int)$old['id'];$statement=$old['statement_on'];$due=$old['due_on'];$manual=(int)$old['is_manual'];}
+            }
+            $now=current_time('mysql',true);
+            $data=array('household_id'=>$hid,'account_id'=>$card_id,'statement_on'=>$statement,'due_on'=>$due,'paid_on'=>$paid_on,'amount'=>$amount,'is_manual'=>$manual,'scope'=>$scope,
+                'note'=>mb_substr(sanitize_text_field($r->get_param('note')),0,255),'tracking_code'=>mb_substr(trim(sanitize_text_field($r->get_param('tracking_code'))),0,60),'updated_at'=>$now);
+            if($old)$ok=$wpdb->update($table,$data,array('id'=>$payment_id,'household_id'=>$hid));
+            else{$data['created_by']=get_current_user_id();$data['created_at']=$now;$ok=$wpdb->insert($table,$data);$payment_id=(int)$wpdb->insert_id;}
+            if($ok===false||!self::write_card_payment_entry($hid,$payment_id)){$wpdb->query('ROLLBACK');return self::error('信用卡繳費與備查同步失敗，請重試',500);}
+            $wpdb->query('COMMIT');
+        }finally{$wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)',$lock));}
+        WFF_Storage::activity($hid,'save_card_payment',$card_id,substr($statement,0,7).' 繳費 '.number_format($amount,2,'.','').' 元');
+        return array('saved'=>true,'id'=>$payment_id);
+    }
+
+    public static function delete_card_payment($r){
+        global $wpdb;
+        $hid=(int)$r['hid'];$role=self::role($hid,'editor');if(is_wp_error($role))return $role;
+        $id=(int)$r['id'];$table=WFF_Storage::table('card_payments');$t=WFF_Storage::table('transactions');
+        $row=$wpdb->get_row($wpdb->prepare("SELECT account_id FROM $table WHERE id=%d AND household_id=%d",$id,$hid),ARRAY_A);
+        if(!$row)return self::error('找不到信用卡繳費紀錄',404);
+        $lock='wff_card_'.md5($wpdb->prefix.$hid.'_'.(int)$row['account_id']);
+        if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s,5)',$lock))!==1)return self::error('此信用卡正在更新，請稍後重試',409);
+        try{
+            $wpdb->query('START TRANSACTION');
+            if(!$wpdb->delete($table,array('id'=>$id,'household_id'=>$hid))){$wpdb->query('ROLLBACK');return self::error('找不到信用卡繳費紀錄',404);}
+            if($wpdb->delete($t,array('card_payment_id'=>$id,'household_id'=>$hid))===false){$wpdb->query('ROLLBACK');return self::error('備查移除失敗，請重試',500);}
+            $wpdb->query('COMMIT');WFF_Storage::activity($hid,'delete_card_payment',$id);
+        }finally{$wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)',$lock));}
         return array('deleted'=>true);
     }
 
@@ -760,6 +796,12 @@ final class WFF_API {
                 $today_totals[$entry['kind']] = (float)$entry['amount'];
             }
         }
+        $yesterday=(new DateTimeImmutable($today,wp_timezone()))->modify('-1 day')->format('Y-m-d');
+        $yesterday_rows=self::entries($hid,array('date'=>$yesterday),20,0);
+        $yesterday_totals=array('income'=>0.0,'expense'=>0.0,'transfer'=>0.0);
+        foreach($wpdb->get_results($wpdb->prepare("SELECT kind,COALESCE(SUM(amount),0) amount FROM $t WHERE payment_status='paid' AND household_id=%d AND occurred_on=%s GROUP BY kind",$hid,$yesterday),ARRAY_A) as $entry){
+            if(isset($yesterday_totals[$entry['kind']]))$yesterday_totals[$entry['kind']]=(float)$entry['amount'];
+        }
         $dates = array();
         $from = DateTimeImmutable::createFromFormat('!Y-m', $month);
         for ($i=5; $i>=0; $i--) {
@@ -789,7 +831,7 @@ final class WFF_API {
             'recent'=>$recent['items'],'today'=>array(
                 'date'=>$today,'total'=>$today_rows['total'],
                 'items'=>$today_rows['items'],'totals'=>$today_totals
-            ),'trend'=>array_values($dates),'cards'=>$cards,
+            ),'yesterday'=>array('date'=>$yesterday,'total'=>$yesterday_rows['total'],'items'=>$yesterday_rows['items'],'totals'=>$yesterday_totals),'trend'=>array_values($dates),'cards'=>$cards,
             'insights'=>WFF_Insights::dashboard($hid,$month,$cards)
         );
     }
@@ -987,9 +1029,30 @@ final class WFF_API {
         if (is_wp_error($role)) { return $role; }
         $a=WFF_Storage::table('activity');
         $u=$wpdb->users;
-        return $wpdb->get_results($wpdb->prepare(
-            "SELECT a.action,a.object_id,a.description,a.created_at,u.display_name FROM $a a LEFT JOIN $u u ON u.ID=a.user_id WHERE a.household_id=%d ORDER BY a.id DESC LIMIT 50", $hid
+        $rows=$wpdb->get_results($wpdb->prepare(
+            "SELECT a.action,a.object_id,a.description,a.created_at,u.display_name FROM $a a LEFT JOIN $u u ON u.ID=a.user_id WHERE a.household_id=%d ORDER BY a.id DESC LIMIT 50",$hid
         ),ARRAY_A);
+        foreach($rows as &$row){
+            $row['action_label']=self::activity_label($row['action']);
+            $row['local_time']=get_date_from_gmt($row['created_at'],'Y-m-d H:i:s');
+            $desc=$row['description'];
+            $desc=preg_replace('/^Imported (\d+) rows$/u','匯入 $1 筆記帳',$desc);
+            $desc=str_replace(array('family/expense','family/income','business/expense','business/income'),array('家庭支出','家庭收入','公司支出','公司收入'),$desc);
+            $row['details']=$desc?:('紀錄編號 #'.(int)$row['object_id']);
+        }
+        unset($row);return $rows;
+    }
+    public static function activity_label($action){
+        $labels=array(
+            'create_transaction'=>'新增一筆記帳','update_transaction'=>'修改記帳內容','delete_transaction'=>'刪除一筆記帳',
+            'create_household'=>'建立家庭空間','save_category'=>'儲存記帳分類','reorder_categories'=>'調整分類順序','delete_category'=>'刪除記帳分類',
+            'save_payment_tool'=>'儲存付款工具','save_card_payment'=>'登記或修改信用卡繳費','delete_card_payment'=>'取消信用卡已繳紀錄',
+            'create_loan'=>'新增貸款追蹤','update_loan'=>'修改貸款設定','save_loan_payment'=>'登記或修改貸款繳款','undo_loan_payment'=>'取消貸款已繳狀態',
+            'save_subscription'=>'儲存訂閱設定','delete_subscription'=>'刪除已停止的訂閱','subscription_paid'=>'標記收支為已繳費','subscription_unpaid'=>'取消收支已繳狀態',
+            'save_receipt'=>'上傳或更換收據照片','delete_receipt'=>'刪除收據照片','remove_member'=>'移除家庭成員','change_member'=>'修改家庭成員權限',
+            'create_invite'=>'建立成員邀請連結','accept_invite'=>'加入家庭空間','import_csv'=>'匯入記帳資料'
+        );
+        return $labels[$action]??'其他資料異動';
     }
 
     private static function decode_csv($csv) {
@@ -1013,7 +1076,7 @@ final class WFF_API {
         if (!$sheet && count(array_intersect(array('日期','範圍','類型','金額'), $head)) !== 4) {
             return self::error('不支援的 CSV 欄位，請使用本系統匯出的 CSV 或指定 Google Sheet A–M 欄位格式');
         }
-        $out=array(); $errors=array(); $carry=''; $section='income';
+        $out=array(); $errors=array(); $skipped_references=0; $carry=''; $section='income';
         foreach (array_slice($rows,1) as $n=>$r) {
             $line=$n+2;
             if ($sheet) {
@@ -1046,18 +1109,19 @@ final class WFF_API {
                 $scope=trim($lookup['範圍'] ?? '');
                 $scope=in_array($scope,array('公司','business'),true)?'business':'family';
                 $k=trim($lookup['類型'] ?? '');
+                if(in_array($k,array('card_payment','信用卡繳費備查'),true)){$skipped_references++;continue;}
                 $kind=in_array($k,array('收入','income'),true)?'income':(in_array($k,array('轉帳','transfer'),true)?'transfer':'expense');
                 $amount=self::amount($lookup['金額'] ?? '');
                 if (!$date || $amount===false) { $errors[]="第 $line 行：日期或金額錯誤"; continue; }
                 $out[]=array('occurred_on'=>$date,'scope'=>$scope,'kind'=>$kind,
                     'category'=>trim($lookup['分類']??''),'amount'=>$amount,
-                    'note'=>trim($lookup['備註']??''),'payment_method'=>trim($lookup['付款方式']??'cash'),
+                    'note'=>trim($lookup['備註']??''),'tracking_code'=>mb_substr(trim($lookup['代號']??''),0,60),'payment_method'=>trim($lookup['付款方式']??'cash'),
                     'account'=>trim($lookup['帳戶']??''),'destination_account'=>trim($lookup['轉入帳戶']??''),
                     'payment_channel'=>trim($lookup['付款通路']??''),'payment_status'=>($lookup['繳費狀態']??'paid')==='unpaid'?'unpaid':'paid');
             }
             if (count($errors)>25) { break; }
         }
-        return array('items'=>$out,'errors'=>$errors,'mode'=>$sheet?'google_sheet':'standard');
+        return array('items'=>$out,'errors'=>$errors,'mode'=>$sheet?'google_sheet':'standard','skipped_references'=>$skipped_references);
     }
 
     private static function find_category($hid,$row) {
@@ -1090,7 +1154,7 @@ final class WFF_API {
         if (!$r->get_param('confirm')) {
             return array('preview'=>true,'mode'=>$parsed['mode'],'count'=>count($parsed['items']),
                 'samples'=>array_slice($parsed['items'],0,8),
-                'warning'=>'匯入不會自動去重；請勿重複匯入同一份檔案。信用卡費會記為不影響收支總額的轉帳。');
+                'warning'=>($parsed['skipped_references']?'已略過 '.$parsed['skipped_references'].' 筆由信用卡繳費自動產生的備查；':'').'匯入不會自動去重；請勿重複匯入同一份檔案。信用卡費會記為不影響收支總額的轉帳。');
         }
         $a=WFF_Storage::table('accounts');
         $t=WFF_Storage::table('transactions');
@@ -1124,7 +1188,7 @@ final class WFF_API {
                 'category_id'=>$cat,'amount'=>$item['amount'],'note'=>mb_substr(sanitize_text_field($item['note']),0,255),
                 'payment_method'=>in_array($item['payment_method'],array('cash','bank','card','mobile','other'),true)?$item['payment_method']:'other',
                 'account_id'=>$account_id,'destination_account_id'=>$destination_id,
-                'payment_channel_id'=>$channel_id,'payment_status'=>$item['payment_status']??'paid',
+                'tracking_code'=>$item['tracking_code']??'','payment_channel_id'=>$channel_id,'payment_status'=>$item['payment_status']??'paid',
                 'created_by'=>get_current_user_id(),'created_at'=>current_time('mysql',true),'updated_at'=>current_time('mysql',true)
             ));
             if (!$ok) { $wpdb->query('ROLLBACK'); return self::error('交易匯入失敗，已取消本次匯入',500); }
@@ -1146,7 +1210,7 @@ final class WFF_API {
             $out[]=array(
                 '日期'=>$row['occurred_on'],'範圍'=>$row['scope'],'類型'=>$row['kind'],
                 '分類'=>$row['category_name']??'','金額'=>$row['amount'],
-                '備註'=>$row['note'],'付款方式'=>$row['payment_method'],
+                '備註'=>$row['note'],'代號'=>$row['tracking_code']??'','付款方式'=>$row['payment_method'],
                 '帳戶'=>$row['account_name']??'','轉入帳戶'=>$row['destination_account_name']??'',
                 '付款通路'=>$row['payment_channel_name']??'','繳費狀態'=>$row['payment_status']
             );

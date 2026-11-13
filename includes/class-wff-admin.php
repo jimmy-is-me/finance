@@ -299,7 +299,7 @@ final class WFF_Admin {
             echo '<tr><td>' . (int) $row['id'] . '</td><td>' . esc_html($row['occurred_on'])
                 . '</td><td>' . esc_html($row['household_name']) . '</td><td>'
                 . ($row['scope']==='business'?'公司':'家庭') . '</td><td>'
-                . (array('income'=>'收入','expense'=>'支出','transfer'=>'轉帳')[$row['kind']] ?? esc_html($row['kind']))
+                . (array('income'=>'收入','expense'=>'支出','transfer'=>'轉帳','card_payment'=>'信用卡繳費備查')[$row['kind']] ?? esc_html($row['kind']))
                 . '</td><td>' . esc_html($row['category_name'] ?: '—') . '</td><td>NT$ '
                 . esc_html(number_format_i18n((float)$row['amount'],2)) . '</td><td>'
                 . esc_html($row['note']) . '</td><td>' . esc_html($row['created_by_name'] ?: '—') . '</td></tr>';
@@ -326,10 +326,10 @@ final class WFF_Admin {
              ORDER BY a.id DESC LIMIT %d OFFSET %d",$per_page,($page-1)*$per_page
         ),ARRAY_A);
         self::intro('最近操作紀錄','可追蹤成員新增、編輯、刪除資料等操作，依最新時間排序。');
-        echo '<div class="wff-admin-panel"><table class="widefat striped"><thead><tr><th>時間（UTC）</th><th>家庭</th><th>帳號</th><th>操作</th><th>物件 ID</th><th>說明</th></tr></thead><tbody>';
+        echo '<div class="wff-admin-panel"><table class="widefat striped"><thead><tr><th>時間（網站時區）</th><th>家庭</th><th>帳號</th><th>做了什麼</th><th>物件 ID</th><th>說明</th></tr></thead><tbody>';
         foreach ($rows as $row) {
-            echo '<tr><td>'.esc_html($row['created_at']).'</td><td>'.esc_html($row['household_name'])
-                .'</td><td>'.esc_html($row['display_name']).'</td><td>'.esc_html($row['action'])
+            echo '<tr><td>'.esc_html(get_date_from_gmt($row['created_at'],'Y-m-d H:i:s')).'</td><td>'.esc_html($row['household_name'])
+                .'</td><td>'.esc_html($row['display_name']).'</td><td>'.esc_html(WFF_API::activity_label($row['action']))
                 .'</td><td>'.(int)$row['object_id'].'</td><td>'.esc_html($row['description']).'</td></tr>';
         }
         if (!$rows) { echo '<tr><td colspan="6">尚無操作紀錄。</td></tr>'; }
