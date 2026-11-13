@@ -32,7 +32,9 @@ jobs:
           php tests/loan-ledger.test.php
           php tests/loan-management.test.php
       - name: Test database-backed finance API
-        run: php tests/finance-api.test.php
+        run: |
+          php tests/finance-api.test.php
+          php tests/category-options.test.php
       - name: Test credit card cross-month statement calendar
         run: php tests/card-cycles.test.php
       - name: Test subscription calendar

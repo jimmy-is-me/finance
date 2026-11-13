@@ -19,6 +19,8 @@ final class WFF_API {
         self::route('/households/(?P<hid>\d+)/transactions/(?P<id>\d+)/receipt', 'POST', 'save_receipt', $a);
         self::route('/households/(?P<hid>\d+)/transactions/(?P<id>\d+)/receipt', 'DELETE', 'delete_receipt', $a);
         self::route('/households/(?P<hid>\d+)/categories', 'POST', 'save_category', $a);
+        self::route('/households/(?P<hid>\d+)/tracking-codes', 'POST', 'save_tracking_code', $a);
+        self::route('/households/(?P<hid>\d+)/tracking-codes/(?P<id>\d+)', 'DELETE', 'delete_tracking_code', $a);
         self::route('/households/(?P<hid>\d+)/categories/reorder', 'PUT', 'reorder_categories', $a);
         self::route('/households/(?P<hid>\d+)/categories/(?P<id>\d+)', 'PUT', 'save_category', $a);
         self::route('/households/(?P<hid>\d+)/categories/(?P<id>\d+)', 'DELETE', 'delete_category', $a);
@@ -154,6 +156,8 @@ final class WFF_API {
         $member_limit = (int) $wpdb->get_var($wpdb->prepare("SELECT member_limit FROM $h WHERE id=%d", $hid));
         $member_limit = max(1, $member_limit);
         return array(
+            'tracking_codes' => $wpdb->get_results($wpdb->prepare('SELECT id,name FROM '.WFF_Storage::table('tracking_codes').' WHERE household_id=%d ORDER BY id', $hid), ARRAY_A),
+            'tracking_code_history' => $wpdb->get_col($wpdb->prepare("SELECT DISTINCT tracking_code FROM ".WFF_Storage::table('transactions')." WHERE household_id=%d AND tracking_code<>'' ORDER BY tracking_code", $hid)),
             'member_limit' => $member_limit,
             'role' => $role,
             'categories' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $c WHERE household_id=%d ORDER BY scope,kind,sort_order ASC,id ASC", $hid), ARRAY_A),
@@ -408,6 +412,33 @@ final class WFF_API {
         return $deleted;
     }
 
+    public static function save_tracking_code($r) {
+        global $wpdb;
+        $hid=(int)$r['hid'];
+        $role=self::role($hid,'editor');
+        if(is_wp_error($role))return $role;
+        $name=trim(sanitize_text_field($r->get_param('name')));
+        if($name===''||mb_strlen($name)>60)return self::error('請輸入 1～60 字的統計代號');
+        $table=WFF_Storage::table('tracking_codes');
+        if($wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE household_id=%d AND name=%s",$hid,$name)))return self::error('此統計代號已存在');
+        if($wpdb->insert($table,array('household_id'=>$hid,'name'=>$name))===false)return self::error('新增代號失敗');
+        $id=(int)$wpdb->insert_id;
+        WFF_Storage::activity($hid,'save_tracking_code',$id,$name);
+        return array('saved'=>true,'id'=>$id);
+    }
+    public static function delete_tracking_code($r) {
+        global $wpdb;
+        $hid=(int)$r['hid'];
+        $role=self::role($hid,'editor');
+        if(is_wp_error($role))return $role;
+        $table=WFF_Storage::table('tracking_codes');
+        $id=(int)$r['id'];
+        if(!$wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE household_id=%d AND id=%d",$hid,$id)))return self::error('找不到統計代號',404);
+        if($wpdb->delete($table,array('id'=>$id,'household_id'=>$hid))===false)return self::error('刪除代號失敗');
+        WFF_Storage::activity($hid,'delete_tracking_code',$id);
+        return array('deleted'=>true);
+    }
+
     public static function save_category($r) {
         global $wpdb;
         $hid = (int) $r['hid'];
@@ -424,6 +455,19 @@ final class WFF_API {
         $c = WFF_Storage::table('categories');
         $id = (int) $r->get_param('id');
         $data = array('name' => $name, 'scope' => $scope, 'kind' => $kind, 'color' => $color);
+        if ($r->get_param('quick_notes') !== null) {
+            $raw=$r->get_param('quick_notes');
+            if(!is_string($raw)||strlen($raw)>20000)return self::error('備註選項過長');
+            $notes=array();
+            foreach(preg_split('/\r\n|\r|\n/',$raw) as $line){
+                $line=trim(sanitize_text_field($line));
+                if($line==='')continue;
+                if(mb_strlen($line)>255)return self::error('每個備註選項最多 255 字');
+                if(!in_array($line,$notes,true))$notes[]=$line;
+            }
+            if(count($notes)>100)return self::error('每個分類最多 100 個備註選項');
+            $data['quick_notes']=implode("\n",$notes);
+        }
         $current = null;
         if ($id) {
             $current = $wpdb->get_row($wpdb->prepare(
@@ -1045,7 +1089,7 @@ final class WFF_API {
     public static function activity_label($action){
         $labels=array(
             'create_transaction'=>'新增一筆記帳','update_transaction'=>'修改記帳內容','delete_transaction'=>'刪除一筆記帳',
-            'create_household'=>'建立家庭空間','save_category'=>'儲存記帳分類','reorder_categories'=>'調整分類順序','delete_category'=>'刪除記帳分類',
+            'create_household'=>'建立家庭空間','save_tracking_code'=>'新增統計代號','delete_tracking_code'=>'移除常用統計代號','save_category'=>'儲存記帳分類','reorder_categories'=>'調整分類順序','delete_category'=>'刪除記帳分類',
             'save_payment_tool'=>'儲存付款工具','save_card_payment'=>'登記或修改信用卡繳費','delete_card_payment'=>'取消信用卡已繳紀錄',
             'delete_loan'=>'刪除貸款設定（收支保留）','create_loan'=>'新增貸款追蹤','update_loan'=>'修改貸款設定','save_loan_payment'=>'登記或修改貸款繳款','undo_loan_payment'=>'取消貸款已繳狀態',
             'save_subscription'=>'儲存訂閱設定','delete_subscription'=>'刪除已停止的訂閱','subscription_paid'=>'標記收支為已繳費','subscription_unpaid'=>'取消收支已繳狀態',

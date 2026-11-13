@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.7.0 */
+/* WUMETAX Finance v1.8.0 */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -497,19 +497,19 @@
     const d=S.transactions || {items:[],page:1,pages:1,total:0};
     return '<div class="wff-pagehead"><div><div class="wff-kicker">LEDGER / 每筆都清楚</div><h1>收支 <span class="wff-highlight">紀錄</span></h1>'+
       '<p>家庭與公司分別分類，支援月份、類型及備註文字搜尋。</p></div>'+periodPicker()+'</div>'+
-      '<section class="wff-panel"><div class="wff-toolbar">'+
+      '<section class="wff-panel"><div class="wff-toolbar wff-ledger-toolbar">'+
       '<label>收支空間<select id="wff-scope"><option value="all">全部</option>'+
         '<option value="family" '+(S.scope==='family'?'selected':'')+'>家庭</option><option value="business" '+(S.scope==='business'?'selected':'')+'>公司</option></select></label>'+
       '<label>類型<select id="wff-kind">'+[['all','全部'],['income','收入'],['expense','支出'],['transfer','轉帳'],['card_payment','信用卡繳費備查']].map(x=>
         '<option value="'+x[0]+'" '+(S.kind===x[0]?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></label>'+
       '<form class="wff-note-search" id="wff-note-search-form" role="search">'+
-      '<label for="wff-note-search">備註搜尋</label>'+
-      '<input id="wff-note-search" name="search" type="search" maxlength="100" placeholder="輸入備註關鍵字，例如卡費、好市多" value="'+e(S.noteSearch)+'">'+
-      '<label>統計代號<input name="code" type="search" maxlength="60" value="'+e(S.codeSearch)+'" placeholder="完整代號"></label>'+
+      '<label for="wff-note-search">備註搜尋'+
+      '<input id="wff-note-search" name="search" type="search" maxlength="100" placeholder="輸入備註關鍵字，例如卡費、好市多" value="'+e(S.noteSearch)+'"></label>'+
+      '<label>統計代號'+codeSelect('code',S.codeSearch,true)+'</label>'+
       '<label class="wff-checkline"><input name="all_months" type="checkbox" '+(S.codeAllMonths?'checked':'')+'> 跨月份查詢</label>'+
-      '<button class="wff-button" type="submit">搜尋</button>'+
+      '<span class="wff-filter-actions"><button class="wff-button" type="submit">搜尋</button>'+
       (S.noteSearch||S.codeSearch||S.codeAllMonths?'<button class="wff-textbtn" type="button" data-action="clear-note-search">清除</button>':'')+
-      '</form>'+
+      '</span></form>'+
       (canEdit()?simpleBtn('＋ 新增一筆','new-transaction','wff-primary'):'')+'</div>'+
       codeSummary(d.code_totals||[])+
       '<div class="wff-list-count">共 '+e(d.total)+' 筆 · 每頁最多 25 筆</div>'+
@@ -602,7 +602,12 @@
               '</div>').join('')+'</div>'+
           (canSort?'<p class="wff-category-hint">⠿ 拖曳排序 · ↑ ↓ 移動 · 自動儲存</p>':'')+
           '</section>';
-      }).join('')+'</div>';
+      }).join('')+'</div>'+trackingCodesPanel();
+  }
+  function trackingCodesPanel() {
+    return '<section class="wff-panel wff-codes-panel"><div class="wff-panel-head"><h2>常用統計代號</h2></div><p>新增後即可在記帳與收支搜尋下拉選擇；移除選項不會修改既有記帳的代號。</p>'+
+      (canEdit()?'<form id="wff-code-form" class="wff-code-form"><label>新增代號<input name="name" maxlength="60" required placeholder="例如：仙台旅遊"></label><button type="submit" class="wff-button wff-primary">新增代號</button></form>':'')+
+      '<div class="wff-code-list">'+(S.meta?.tracking_codes||[]).map(x=>'<div><span>'+e(x.name)+'</span>'+(canEdit()?'<button type="button" class="wff-textbtn" data-action="delete-code" data-id="'+e(x.id)+'">移除</button>':'')+'</div>').join('')+'</div></section>';
   }
   function members() {
     return '<div class="wff-pagehead"><div><div class="wff-kicker">TOGETHER / FAMILY</div>'+
@@ -676,7 +681,17 @@
     data.account_id=activeAccounts().some(x=>String(x.id)===String(source)&&['cash','bank','credit'].includes(x.type))?source:'';
     return data;
   }
-  function transactionFields(d) {
+  function codeSelect(name,value='',includeHistory=false) {
+    const managed=(S.meta?.tracking_codes||[]).map(x=>x.name);
+    const historic=includeHistory?(S.meta?.tracking_code_history||[]):[];
+    const all=[...new Set([...managed,...historic,value].filter(Boolean))];
+    return '<select name="'+name+'"><option value="">'+(name==='code'?'全部代號':'不使用統計代號')+'</option>'+all.map(x=>'<option value="'+e(x)+'" '+(x===value?'selected':'')+'>'+e(x)+(managed.includes(x)?'':'（既有紀錄）')+'</option>').join('')+'</select>';
+  }
+  function quickNoteSelect(categoryId) {
+    const notes=String(categoryById(categoryId)?.quick_notes||'').split(/\r?\n/).filter(Boolean);
+    return '<select name="quick_note" aria-label="備註快捷選項"><option value="">'+(notes.length?'選擇常用備註（也可自行填寫）':'此分類尚無快捷選項，可直接填寫備註')+'</option>'+notes.map(x=>'<option value="'+e(x)+'">'+e(x)+'</option>').join('')+'</select>';
+  }
+  function transactionFields(d,forTransaction=false) {
     const scope=d.scope||'family',kind=d.kind||'expense',method=d.payment_method||'cash';
     const transfer=kind==='transfer';
     const cats=(S.meta?.categories||[]).filter(c=>c.scope===scope&&c.kind===kind);
@@ -693,6 +708,9 @@
       '<option value="'+e(c.id)+'" '+(String(d.category_id||'')===String(c.id)?'selected':'')+
       ' style="background-color:'+categoryColor(c.color)+'">'+e(c.name)+'</option>').join('')+'</select>';
     return (transfer?'<div class="wff-note">轉帳或信用卡還款不會重複計入收支。</div>':field('分類',categorySelect))+
+      (forTransaction?'<div class="wff-form-grid">'+field('備註',
+        '<span data-quick-notes>'+quickNoteSelect(d.category_id)+'</span><input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="選用快捷備註，或自行輸入">')+
+        field('統計代號（選填）',codeSelect('tracking_code',d.tracking_code||'')+'<small class="wff-small">可至分類管理新增常用代號。</small>')+'</div>':'')+
       '<div data-transaction-method'+(transfer?' hidden':'')+'>'+field('付款方式','<select name="payment_method">'+selectValues([['cash','現金'],['card','信用卡'],['mobile','行動支付'],['bank','銀行帳戶'],['other','其他']],method)+'</select>')+'</div>'+
       (method==='mobile'&&!transfer?field('使用的行動支付','<select name="payment_channel_id" required>'+
        options(wallets,d.payment_channel_id,'選擇 LINE Pay、Apple Pay 等')+'</select><small class="wff-small">選擇後即記住此瀏覽器的預設，不必先儲存記帳。</small>'):'')+
@@ -715,7 +733,7 @@
     }
     if(data.payment_method==='mobile'&&data.payment_channel_id)walletDefault({channel:data.payment_channel_id,source:data.account_id||''});
     const block=form.querySelector('#wff-transaction-dynamic');
-    if(block)block.innerHTML=transactionFields(data);
+    if(block)block.innerHTML=transactionFields(data,form.id==='wff-transaction-form');
     const payment=form.querySelector('[data-transaction-method]');
     if(payment)payment.hidden=data.kind==='transfer';
   }
@@ -738,9 +756,7 @@
         '<div class="wff-form-grid">'+
         field('日期',dateControl('occurred_on',d.occurred_on||new Date().toLocaleDateString('sv-SE')))+
         field('金額（NT$）','<input name="amount" type="number" step="1" min="1" required inputmode="numeric" value="'+e(d.amount||'')+'" placeholder="0">')+'</div>'+
-        '<div class="wff-form-grid">'+field('備註','<input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="例如：晚餐、主機年費">')+
-        field('統計代號（選填）','<input name="tracking_code" maxlength="60" value="'+e(d.tracking_code||'')+'" placeholder="例如：仙台旅遊、裝修A">')+'</div>'+
-        '<div id="wff-transaction-dynamic">'+transactionFields(d)+'</div>'+
+        '<div id="wff-transaction-dynamic">'+transactionFields(d,true)+'</div>'+
         '<div class="wff-bill-dates"'+(d.kind==='transfer'?'':' hidden')+'>'+
         field('帳單出帳日期（選填）','<input type="date" name="statement_on" value="'+e(d.statement_on||'')+'">')+
         field('帳單繳款期限（選填）','<input type="date" name="payment_due_on" value="'+e(d.payment_due_on||'')+'">')+'</div>'+
@@ -820,6 +836,7 @@
         field('分類名稱','<input name="name" maxlength="80" required value="'+e(d.name||'')+'" placeholder="例：餐飲">')+
         '<div class="wff-form-grid">'+field('範圍','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+
         field('類型','<select name="kind">'+selectValues([['expense','支出'],['income','收入']],d.kind||'expense')+'</select>')+'</div>'+
+        field('備註快捷選項（每行一個）','<textarea name="quick_notes" rows="5" maxlength="20000" placeholder="元氣\n麥當勞">'+e(d.quick_notes||'')+'</textarea><small class="wff-small">記帳時依所選分類顯示，不會自動覆蓋手動備註。</small>')+
         field('標籤顏色','<input type="color" name="color" value="'+e(d.color||'#FFD93D')+'">')+
         '<button class="wff-button wff-primary" type="submit">儲存分類 ✓</button></form>';
     } else if(type==='account'){
@@ -857,7 +874,7 @@
         field('實際繳費日期',dateControl('paid_on',payment?.paid_on||S.cardPayments?.today||new Date().toLocaleDateString('sv-SE')))+
         field('實際繳費金額（NT$）','<input name="amount" type="number" step=".01" min=".01" required inputmode="decimal" value="'+e(payment?.amount||'')+'" placeholder="輸入本次繳費金額">')+'</div>'+
         field('備註','<input name="note" maxlength="255" value="'+e(payment?.note||'')+'">')+
-        field('統計代號（選填）','<input name="tracking_code" maxlength="60" value="'+e(payment?.tracking_code||'')+'">')+
+        field('統計代號（選填）',codeSelect('tracking_code',payment?.tracking_code||''))+
         '<button type="submit" class="wff-button wff-primary">確認本期已繳</button></form>'+
         (payment&&canEdit()?'<button type="button" class="wff-textbtn" data-action="delete-card-payment" data-id="'+e(payment.id)+'">取消本期已繳紀錄</button>':'');
     } else if(type==='card-history'){
@@ -1220,6 +1237,9 @@
         S.loans.items=S.loans.items.map(x=>Number(x.id)===id?full:x);S.loanExpanded[id]=true;render();
       });
     }
+    if(act==='delete-code'&&confirm('移除此常用代號？既有收支紀錄會保留代號。')){
+      attempt(async()=>{await request(path('tracking-codes/'+id),'DELETE');await reload();show('已移除常用代號');});
+    }
     if(act==='new-category'){openModal('category');}
     if(act==='category-up'){moveCategory(id,-1);}
     if(act==='category-down'){moveCategory(id,1);}
@@ -1297,11 +1317,17 @@
       refreshTransactionFields(form,t.name);
       const bills=form.querySelector('.wff-bill-dates');if(bills)bills.hidden=form.elements.kind.value!=='transfer';
     }
+    if(S.modal==='transaction'&&t.name==='quick_note'&&t.value&&t.form?.id==='wff-transaction-form'){
+      t.form.elements.note.value=t.value;
+      t.value='';
+    }
     if(S.modal==='transaction' && t.name==='category_id' && t.form?.id==='wff-transaction-form') {
       updateCategorySelect(t.form);
+      const choices=t.form.querySelector('[data-quick-notes]');if(choices)choices.innerHTML=quickNoteSelect(t.value);
     }
   });
   root.addEventListener('input',ev=>{
+
     const form=ev.target.form;
     if(form?.id==='wff-loan-payment-form'&&['principal_amount','interest_amount'].includes(ev.target.name)){
       const p=form.elements.principal_amount.value,i=form.elements.interest_amount.value,total=form.elements.paid_amount;
@@ -1335,7 +1361,7 @@
       return;
     }
     const handled = ['wff-household-form','wff-signup','wff-transaction-form',
-      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-account-form','wff-card-payment-form','wff-note-search-form','wff-invite-form','wff-import-form'];
+      'wff-loan-form','wff-loan-payment-form','wff-subscription-form','wff-category-form','wff-code-form','wff-account-form','wff-card-payment-form','wff-note-search-form','wff-invite-form','wff-import-form'];
     if(!handled.includes(form.id)) return;
     ev.preventDefault();
     if(form.id==='wff-note-search-form'){
@@ -1391,6 +1417,9 @@
         await request(path('loans/'+loanId+'/payments'),'POST',getFormData(form));
         resetModal();await reload();show('本期繳款已登錄');
       });
+    }
+    if(form.id==='wff-code-form'){
+      attempt(async()=>{await request(path('tracking-codes'),'POST',getFormData(form));await reload();show('已新增統計代號');});
     }
     if(form.id==='wff-category-form'){
       attempt(async()=>{const id=S.draft.id;await request(path('categories'+(id?'/'+id:'')),id?'PUT':'POST',getFormData(form));

@@ -27,7 +27,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.4.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.7.0'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.8.0'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -195,7 +195,7 @@ test('v1.2.5 duplicate transaction uses a new ID and preserves original',()=>{
 });
 test('payment method changes update dependent DOM without render or scroll reset',()=>{
  assert.match(js,/function refreshTransactionFields\(form,changed\)/);
- assert.match(js,/block\.innerHTML=transactionFields\(data\)/);
+ assert.match(js,/block\.innerHTML=transactionFields\(data,/);
  assert.match(js,/refreshTransactionFields\(form,t\.name\)/);
  const pos=js.indexOf('function refreshTransactionFields(form,changed)');
  const end=js.indexOf('function updateCategorySelect(form)',pos);
@@ -209,7 +209,7 @@ test('category colors appear across ledger, category UI, and charts',()=>{
  const chart=readFileSync('assets/js/charts.js','utf8');
  assert.match(api,/c\.color AS category_color/);
  assert.match(insights,/c\.color AS color/);
- assert.match(js,/function transactionFields\(d\)/);
+ assert.match(js,/function transactionFields\(d,forTransaction=false\)/);
  assert.match(js,/categoryChip\(x\.category_name/);
  assert.match(js,/categoryChip\(x\.name,x\.color\)/);
  assert.match(css,/wff-category-chip/);
@@ -407,12 +407,12 @@ test('1.3.1 camera receipts are JPEG <=5MB before upload',()=>{
  assert.match(js,/if\(!res\.ok\)throw new Error/);
  assert.match(js,/resetModal\(\);\s*await reload\(\)/);
 });
-test('1.4.0 note precedes category and dashboard includes current day',()=>{
+test('1.8.0 transaction category precedes optional notes and dashboard includes current day',()=>{
  const api=readFileSync('includes/class-wff-api.php','utf8');
  const formStart=js.indexOf("if(type==='transaction'){");
  const formEnd=js.indexOf("} else if(type==='loan'){",formStart);
  const form=js.slice(formStart,formEnd);
- assert.ok(form.indexOf("transactionFields(d)")>form.indexOf("field('備註'"));
+ assert.ok(form.includes("transactionFields(d,true)"));
  assert.match(api,/self::entries\(\$hid, array\('date'=>\$today\), 20, 0\)/);
  assert.match(api,/wp_date\('Y-m-d'\)/);
  assert.match(api,/'today'=>array\(/);

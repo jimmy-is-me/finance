@@ -913,3 +913,38 @@ body.wff-standalone,#wff-app{font-family:Outfit,"Noto Sans TC","Microsoft JhengH
 #wff-app .wff-loan-delete{margin-top:24px;padding-top:18px;border-top:2px solid #121212;font-size:12px;line-height:1.8}
 #wff-app .wff-loan-delete button{border-color:#a51c1c;color:#a51c1c}
 #wff-app .wff-loan-delete button:hover{background:#a51c1c;color:#fff}
+
+/* Ledger filters share a baseline and wrap as whole fields. */
+#wff-app .wff-ledger-toolbar{display:grid;grid-template-columns:150px 150px minmax(0,1fr) auto;align-items:end;gap:16px}
+#wff-app .wff-ledger-toolbar label{display:flex;flex-direction:column;gap:8px;margin:0;min-width:0;font-size:14px}
+#wff-app .wff-ledger-toolbar input:not([type=checkbox]),#wff-app .wff-ledger-toolbar select{width:100%;min-width:0;height:52px;box-sizing:border-box;margin:0}
+#wff-app .wff-ledger-toolbar .wff-note-search{display:grid;grid-template-columns:minmax(150px,1fr) minmax(140px,1fr) auto auto;gap:12px;align-items:end;margin:0;min-width:0;flex:none}
+#wff-app .wff-ledger-toolbar .wff-checkline{flex-direction:row;align-items:center;align-self:end;min-height:52px;white-space:nowrap}
+#wff-app .wff-ledger-toolbar .wff-button{min-height:52px;margin:0;white-space:nowrap}
+#wff-app .wff-modal [data-quick-notes]{display:block;margin-bottom:8px}
+#wff-app .wff-modal textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:120px}
+#wff-app .wff-code-form{display:flex;align-items:end;gap:16px;max-width:600px;margin:20px 0}
+#wff-app .wff-code-form label{flex:1;min-width:0;display:grid;gap:8px}
+#wff-app .wff-code-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+#wff-app .wff-code-list>div{border:1px solid #111;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;overflow-wrap:anywhere}
+#wff-app .wff-codes-panel{margin-top:28px}
+#wff-app .wff-category-sort-list{grid-template-columns:minmax(0,1fr)}
+@media(max-width:1400px){
+ #wff-app .wff-ledger-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #wff-app .wff-ledger-toolbar .wff-note-search{grid-column:1/-1;grid-row:2}
+ #wff-app .wff-ledger-toolbar>.wff-button{grid-column:2;justify-self:end}
+}
+@media(max-width:760px){
+ #wff-app .wff-ledger-toolbar .wff-note-search{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #wff-app .wff-ledger-toolbar .wff-note-search .wff-checkline{white-space:normal}
+ #wff-app .wff-ledger-toolbar>.wff-button{grid-column:1/-1;justify-self:stretch}
+ #wff-app .wff-code-form{align-items:stretch;flex-direction:column}
+}
+@media(max-width:420px){
+ #wff-app .wff-ledger-toolbar .wff-note-search{grid-template-columns:minmax(0,1fr)}
+}
+#wff-app .wff-ledger-toolbar .wff-note-search>label:not(.wff-checkline){flex-direction:column;align-items:stretch;white-space:normal;flex:none;width:auto}
+#wff-app .wff-ledger-toolbar .wff-note-search input[type=search]{flex:none;height:52px}
+#wff-app .wff-ledger-toolbar>label select{height:52px;min-height:52px}
+#wff-app .wff-filter-actions{display:flex;align-items:center;gap:10px;min-height:52px}
+#wff-app .wff-filter-actions .wff-textbtn{white-space:nowrap}

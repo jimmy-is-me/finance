@@ -9,7 +9,7 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
  await page.evaluate(()=>{
   window.WFF_CONFIG={user:{id:1,name:'測試管理員'},rest:'/api/',nonce:'test',home:'/',logout:'/'};
   window.posts=[];
-  window.fixture={meta:{role:'owner',categories:[{id:1,scope:'family',kind:'expense',name:'午餐',color:'#f0c020'}],accounts:[{id:2,type:'bank',name:'銀行',enabled:1},{id:4,type:'credit',name:'未設定日期的卡',enabled:1},{id:10,type:'mobile',name:'LINE Pay',enabled:1,funding_account_id:4},{id:11,type:'mobile',name:'Apple Pay',enabled:1,funding_account_id:4}],members:[]},
+  window.fixture={meta:{tracking_codes:[{id:1,name:'仙台旅遊'}],role:'owner',categories:[{id:1,scope:'family',kind:'expense',name:'午餐',color:'#f0c020',quick_notes:'元氣\n麥當勞'}],accounts:[{id:2,type:'bank',name:'銀行',enabled:1},{id:4,type:'credit',name:'未設定日期的卡',enabled:1},{id:10,type:'mobile',name:'LINE Pay',enabled:1,funding_account_id:4},{id:11,type:'mobile',name:'Apple Pay',enabled:1,funding_account_id:4}],members:[]},
    dashboard:{totals:{family:{income:0,expense:460},business:{income:0,expense:0}},cards:[],recent:[],today:{date:'2026-11-13',total:1,totals:{income:0,expense:460},items:[{kind:'expense',scope:'family',category_name:'午餐',note:'午餐',amount:460}]},yesterday:{date:'2026-11-12',total:1,totals:{income:0,expense:170},items:[{kind:'expense',scope:'family',category_name:'飲料',note:'昨日飲料',amount:170}]}},
    transactions:{items:[],total:0,page:1,pages:1},
    cardPayments:{today:'2026-11-13',cards:{4:{configured:false,periods:[{statement_on:'2026-11-01',starts_on:'2026-11-01',due_on:null,manual:true,status:'pending',payment:null}]}}},
@@ -24,7 +24,7 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
  await page.evaluate(()=>{Object.assign(app.S,{hid:1,view:'dashboard',households:[{id:1,name:'測試家庭'}],meta:fixture.meta,dashboard:fixture.dashboard,transactions:fixture.transactions,cardPayments:fixture.cardPayments,loans:fixture.loans});app.render();});
  const heads=await page.locator('h2').allTextContents();assert(heads.indexOf('今日記帳')<heads.indexOf('昨日記帳'));assert(await page.getByText('昨日飲料').count());
  await page.evaluate(()=>{app.show('先前儲存完成');app.openModal('transaction',{scope:'family',kind:'expense'});});
- await page.locator('[name="amount"]').fill('1234');await page.locator('[name="note"]').fill('輸入中的午餐');await page.locator('[name="tracking_code"]').fill('仙台旅遊');
+ await page.locator('[name="amount"]').fill('1234');await page.locator('[name="note"]').fill('輸入中的午餐');await page.locator('[name="tracking_code"]').selectOption('仙台旅遊');
  await page.locator('[name="payment_method"]').selectOption('mobile');
  assert.equal(await page.locator('[name="payment_channel_id"]').inputValue(),'10');
  await page.locator('[name="payment_channel_id"]').selectOption('11');await page.locator('[name="account_id"]').selectOption('2');
@@ -76,5 +76,31 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
  assert.equal(await page.locator('.wff-overlay').count(),0);
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{app.S.view='dashboard';app.render();app.openModal('transaction',{scope:'family',kind:'expense'});});
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'/tmp/finance160-mobile.png'});
+
+ await page.locator('[name="category_id"]').selectOption('1');
+ await page.locator('[name="quick_note"]').selectOption('麥當勞');
+ assert.equal(await page.locator('[name="note"]').inputValue(),'麥當勞');
+ await page.locator('[name="note"]').fill('麥當勞 自訂內容');
+ await page.locator('[name="payment_method"]').selectOption('mobile');
+ assert.equal(await page.locator('[name="note"]').inputValue(),'麥當勞 自訂內容');
+ await page.locator('[name="category_id"]').selectOption('');
+ assert.equal(await page.locator('[name="note"]').inputValue(),'麥當勞 自訂內容');
+ await page.locator('[name="tracking_code"]').selectOption('仙台旅遊');
+ await page.evaluate(()=>{app.resetModal();app.S.view='categories';app.render();});
+ await page.locator('[data-action="edit-category"]').first().click();
+ assert.equal(await page.locator('[name="quick_notes"]').inputValue(),'元氣\n麥當勞');
+ await page.evaluate(()=>{app.resetModal();app.S.view='categories';app.render();});
+ await page.locator('#wff-code-form [name="name"]').fill('裝修A');
+ await page.locator('#wff-code-form [type="submit"]').click();await page.waitForTimeout(50);
+ assert((await page.evaluate(()=>posts)).some(x=>x.url.endsWith('/tracking-codes')&&JSON.parse(x.body||'{}').name==='裝修A'));
+ await page.locator('[data-action="delete-code"]').first().click({trial:true});
+ await page.evaluate(()=>{app.S.view='transactions';app.render();});
+ for(const width of [390,768,1440]){
+  await page.setViewportSize({width,height:1000});await page.evaluate(()=>window.scrollTo(0,0));
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'filter overflow at '+width);
+  const boxes=await page.locator('.wff-ledger-toolbar input:not([type="checkbox"]), .wff-ledger-toolbar select').evaluateAll(els=>els.map(el=>{const b=el.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height};}));
+  await page.screenshot({path:'/tmp/finance180-filters-'+width+'.png'});
+  assert(boxes.every(b=>b.h===52),'consistent filter heights at '+width+' '+JSON.stringify(boxes));
+ }
  assert.deepEqual(errors,[]);await browser.close();console.log('Browser regression passed: modal timer/fetch preservation, draft wallet defaults, day panels, undated credit payment, reference edits, loan components, code totals, audit labels, full loan history from 2024, paid-state retention, two-confirmation deletion and mobile layout.');
 })().catch(e=>{console.error(e);process.exit(1)});

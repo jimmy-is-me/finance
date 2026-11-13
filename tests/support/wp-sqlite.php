@@ -24,6 +24,7 @@ class Database {
  }
  function query($sql){if(strpos($sql,'START TRANSACTION')===0)$sql='BEGIN';$ok=$this->db->exec($sql);$this->insert_id=$this->db->lastInsertRowID();return $ok?$this->db->changes():false;}
  function get_results($sql,$m=null){$sql=str_replace(array('DATE_ADD(first_due_on,INTERVAL ledger_next MONTH)',' FOR UPDATE'),array('loan_due(first_due_on,ledger_next)',''),$sql);$result=$this->db->query($sql);$out=array();while($r=$result->fetchArray(SQLITE3_ASSOC))$out[]=$r;return $out;}
+ function get_col($sql){return array_map(fn($r)=>array_values($r)[0],$this->get_results($sql));}
  function get_row($sql,$m=null){$rows=$this->get_results($sql);return $rows[0]??null;}
  function get_var($sql){if(strpos($sql,'GET_LOCK')!==false||strpos($sql,'RELEASE_LOCK')!==false)return 1;$row=$this->get_row($sql);return $row?array_values($row)[0]:null;}
  function esc_like($s){return addcslashes($s,'_%\\');}

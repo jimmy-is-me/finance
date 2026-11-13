@@ -24,7 +24,7 @@ test('loan and repayment submit events prevent navigation and reach their endpoi
 test('new transaction form follows requested order and accepts integer steps',()=>{
  const a=app();a.api.S.modal='transaction';a.api.S.draft={scope:'family',kind:'expense'};
  const html=a.api.modal();const names=[...html.matchAll(/name="([^"]+)"/g)].map(x=>x[1]);
- assert.deepEqual(names,['scope','kind','occurred_on','amount','note','tracking_code','category_id','payment_method','account_id','statement_on','payment_due_on','receipt']);
+ assert.deepEqual(names,['scope','kind','occurred_on','amount','category_id','quick_note','note','tracking_code','payment_method','account_id','statement_on','payment_due_on','receipt']);
  assert.match(html,/name="amount" type="number" step="1"/);
 });
 test('card paid marker sends only the date, amount, card and fixed statement cycle',async()=>{
