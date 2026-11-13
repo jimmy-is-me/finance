@@ -64,6 +64,16 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
  await page.locator('[data-action="quick-pay-loan"][data-number="1"]').click();await page.waitForTimeout(100);
  assert.equal(await page.locator('.wff-loan-table tbody tr').count(),60);
  assert.equal(await page.locator('.wff-loan-table tbody tr').first().locator('.wff-loan-state').textContent(),'已繳');
+ const quickPayment=(await page.evaluate(()=>posts)).filter(x=>x.url.endsWith('/loans/1/payments')&&x.method==='POST').at(-1);
+ assert.equal(JSON.parse(quickPayment.body).paid_on,'2024-06-10');
+ assert.equal(JSON.parse(quickPayment.body).paid_amount,17600);
+ await page.locator('[data-action="pay-loan"][data-number="2"]').click();
+ assert.equal(await page.locator('[name="paid_on"]').inputValue(),'2024-07-10');
+ await page.locator('[name="paid_on"]').fill('2024-07-12');
+ await page.locator('#wff-loan-payment-form [type="submit"]').click();await page.waitForTimeout(100);
+ const actualPayment=(await page.evaluate(()=>posts)).filter(x=>x.url.endsWith('/loans/1/payments')&&x.method==='POST').at(-1);
+ assert.equal(JSON.parse(actualPayment.body).paid_on,'2024-07-12');
+
  assert(await page.getByText('NT$ 17,600',{exact:true}).count());
  await page.locator('[data-action="edit-loan"]').click();assert.equal(await page.locator('[name="installments"]').inputValue(),'60');assert(await page.locator('[name="repayment_total"]').count());
  const deletesBefore=(await page.evaluate(()=>posts)).filter(x=>x.url.endsWith('/loans/1')&&x.method==='DELETE').length;
@@ -89,6 +99,20 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
  await page.evaluate(()=>{app.resetModal();app.S.view='categories';app.render();});
  await page.locator('[data-action="edit-category"]').first().click();
  assert.equal(await page.locator('[name="quick_notes"]').inputValue(),'元氣\n麥當勞');
+ for(const width of [390,1280]){
+  await page.setViewportSize({width,height:1000});
+  await page.locator('[name="quick_notes"]').fill('元氣\n麥當勞\n自訂店家');
+  await page.locator('[name="quick_notes"]').evaluate(el=>el.style.height='220px');
+  await page.locator('[name="quick_notes"]').focus();
+  const geometry=await page.locator('#wff-category-form').evaluate(form=>{
+    const area=form.elements.quick_notes,field=area.closest('label'),hint=field.querySelector('small'),color=form.elements.color.closest('label');
+    return {area:area.getBoundingClientRect().bottom,hint:hint.getBoundingClientRect().top,hintBottom:hint.getBoundingClientRect().bottom,color:color.getBoundingClientRect().top};
+  });
+  assert(geometry.area<=geometry.hint&&geometry.hintBottom<=geometry.color,'textarea and hint must not overlap color field');
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:'/tmp/finance181-category-'+width+'.png'});
+ }
+
  await page.evaluate(()=>{app.resetModal();app.S.view='categories';app.render();});
  await page.locator('#wff-code-form [name="name"]').fill('裝修A');
  await page.locator('#wff-code-form [type="submit"]').click();await page.waitForTimeout(50);

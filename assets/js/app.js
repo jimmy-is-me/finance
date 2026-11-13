@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.8.0 */
+/* WUMETAX Finance v1.8.1 */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -474,7 +474,7 @@
            '<td><span class="wff-loan-state wff-loan-state-'+e(p.status)+'">'+e(loanStatusText(p.status))+'</span></td>'+
            '<td>'+paid+note+'</td>'+
            (isOwner()?'<td><div class="wff-row-actions">'+
-             (!p.paid_on && simple?'<button type="button" class="wff-button wff-loan-pay-btn" data-action="quick-pay-loan" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">✓ '+button+'</button>':
+             (!p.paid_on && simple?'<button type="button" class="wff-button wff-loan-pay-btn" title="以本期預定繳款日及金額標記已繳；實際日期不同請選詳細記錄" data-action="quick-pay-loan" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">✓ '+button+'</button>':
                (!p.paid_on?'<button type="button" class="wff-button wff-loan-pay-btn" data-action="pay-loan" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">'+button+'</button>':''))+
              '<button type="button" class="wff-textbtn" data-action="pay-loan" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">'+(p.paid_on?'修改紀錄':'詳細記錄')+'</button>'+
              (p.paid_on?'<button type="button" class="wff-textbtn" data-action="undo-loan-payment" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">取消已繳</button>':'')+'</div></td>':'')+'</tr>';
@@ -816,10 +816,10 @@
       title='記錄 '+e(entry?.due_on?.slice(0,7).replace('-','/')||'本期')+' 繳款';
       body='<form id="wff-loan-payment-form" class="wff-form">'+
        '<div class="wff-note">'+e(loan?.name||'每月繳款')+' · 預定 '+e(entry?.due_on?.replaceAll('-','/')||'')+
-       '，確認扣款後再標記已繳。會同步對應期數的收支，提前繳款也只建立一筆對應紀錄。</div>'+
+       '，歷史期數預設使用預定繳款日。若實際付款日不同，可在下方修改；會同步該期收支日期，不會另外新增一筆。</div>'+
        '<input type="hidden" name="installment_no" value="'+e(d.installment_no)+'">'+
        '<div class="wff-form-grid">'+
-       field('實際繳款日期',dateControl('paid_on',entry?.paid_on||new Date().toLocaleDateString('sv-SE')))+
+       field('實際繳款日期',dateControl('paid_on',entry?.paid_on||(entry?.due_on&&entry.due_on<=new Date().toLocaleDateString('sv-SE')?entry.due_on:new Date().toLocaleDateString('sv-SE'))))+
        field('本金＋利息合計（可直接填總額）',
          '<input name="paid_amount" type="number" min="'+(simple?'0':'.01')+'" step=".01" '+(simple?'':'required')+(entry?.principal_amount!=null?' readonly':'')+
          ' value="'+e(entry?.paid_on?entry.paid_amount:(Number(entry?.scheduled_amount)||''))+'" placeholder="可先不填">')+'</div>'+
@@ -1202,16 +1202,16 @@
       const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
       const number=Number(target.dataset.number);
       const p=loan?.schedule?.find(x=>x.number===number);
-      if(loan && p && !p.paid_on && !Number(loan.regular_payment)){openModal('loan-payment',{loan_id:id,installment_no:number});return;}
+      if(loan && p && !p.paid_on && !Number(p.scheduled_amount||loan.regular_payment)){openModal('loan-payment',{loan_id:id,installment_no:number});return;}
       if(loan && p && !p.paid_on){
         attempt(async()=>{
           await request(path('loans/'+id+'/payments'),'POST',{
             installment_no:number,
-            paid_on:new Date().toLocaleDateString('sv-SE'),
-            paid_amount:loan.regular_payment||0,
+            paid_on:p.due_on,
+            paid_amount:p.scheduled_amount||loan.regular_payment||0,
             note:''
           });
-          await reload();show('已標記 '+loan.name+' 第 '+number+' 期繳款');
+          await reload();show('已標記 '+loan.name+' 第 '+number+' 期繳款（'+p.due_on+'）');
         });
       }
     }

@@ -27,7 +27,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.4.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.8.0'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.8.1'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -299,7 +299,7 @@ test('v1.2.7 new loans are simple tracking with no required APR or principal',()
 });
 test('monthly repayment is a manual one-step journal with bounded navigation',()=>{
  for(const token of ['quick-pay-loan','loan-window-prev','loan-window-next',
-   'loan-window-today','paid_amount:loan.regular_payment||0','到期自動新增未繳費收支']){
+   'loan-window-today','paid_amount:p.scheduled_amount||loan.regular_payment||0','到期自動新增未繳費收支']){
    assert.ok(js.includes(token),'missing '+token);
  }
 });
@@ -407,7 +407,7 @@ test('1.3.1 camera receipts are JPEG <=5MB before upload',()=>{
  assert.match(js,/if\(!res\.ok\)throw new Error/);
  assert.match(js,/resetModal\(\);\s*await reload\(\)/);
 });
-test('1.8.0 transaction category precedes optional notes and dashboard includes current day',()=>{
+test('1.8.1 transaction category precedes optional notes and dashboard includes current day',()=>{
  const api=readFileSync('includes/class-wff-api.php','utf8');
  const formStart=js.indexOf("if(type==='transaction'){");
  const formEnd=js.indexOf("} else if(type==='loan'){",formStart);

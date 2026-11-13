@@ -948,3 +948,9 @@ body.wff-standalone,#wff-app{font-family:Outfit,"Noto Sans TC","Microsoft JhengH
 #wff-app .wff-ledger-toolbar>label select{height:52px;min-height:52px}
 #wff-app .wff-filter-actions{display:flex;align-items:center;gap:10px;min-height:52px}
 #wff-app .wff-filter-actions .wff-textbtn{white-space:nowrap}
+
+/* Multiline notes need their own growing track instead of a one-line control row. */
+#wff-app .wff-modal .wff-form .wff-field:has(textarea){grid-template-rows:auto auto auto}
+#wff-app .wff-modal .wff-form .wff-field textarea{display:block;position:static;width:100%;min-height:140px;height:140px;max-height:none;margin:0;padding:12px 14px;border:1px solid #111;border-radius:0;background:#fff;color:#111;font:inherit;font-size:16px;line-height:1.7;box-sizing:border-box;resize:vertical}
+#wff-app .wff-modal .wff-form .wff-field:has(textarea) .wff-field-title{height:auto;white-space:normal}
+#wff-app .wff-modal .wff-form .wff-field:has(textarea) .wff-small{display:block;position:static;margin:0;line-height:1.6}

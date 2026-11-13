@@ -18,7 +18,14 @@ $normal=WFF_Loans::list_loans(req());check(count($normal['items'][0]['schedule']
 $full=WFF_Loans::list_loans(req(array('full_id'=>$id)))['items'][0];check(count($full['schedule'])===60,'Expand returns all sixty months');check($full['schedule'][0]['due_on']==='2024-06-10'&&$full['schedule'][0]['number']===1,'Earliest historical month present');check($full['schedule'][59]['due_on']==='2029-05-10','Term ends exactly at sixty');
 check((int)$wpdb->get_var("SELECT count(*) FROM wp_wff_transactions WHERE loan_id=$id")===30,'Elapsed thirty periods generated once in bounded batches');
 $paid=req(array('id'=>$id,'installment_no'=>'1','paid_on'=>'2024-06-10','paid_amount'=>'0','principal_amount'=>'15000','interest_amount'=>'2600','note'=>'Historical paid'));
-check(!is_wp_error(WFF_Loans::save_payment($paid)),'Past installment can be marked paid');$paid['installment_no']='30';$paid['paid_on']='2026-11-10';$paid['principal_amount']='14500';$paid['interest_amount']='2500';check(!is_wp_error(WFF_Loans::save_payment($paid)),'Current installment can be marked paid');
+check(!is_wp_error(WFF_Loans::save_payment($paid)),'Past installment can be marked paid');
+$txcount=(int)$wpdb->get_var('SELECT COUNT(*) FROM wp_wff_transactions WHERE loan_id='.$id);
+check($wpdb->get_var('SELECT occurred_on FROM wp_wff_transactions WHERE loan_id='.$id.' AND loan_installment=1')==='2024-06-10','Historical scheduled date stays in historical ledger month');
+$paid['paid_on']='2024-06-12';check(!is_wp_error(WFF_Loans::save_payment($paid)),'Actual date may be explicitly changed');
+check($wpdb->get_var('SELECT occurred_on FROM wp_wff_transactions WHERE loan_id='.$id.' AND loan_installment=1')==='2024-06-12','Explicit actual date updates corresponding entry');
+check((int)$wpdb->get_var('SELECT COUNT(*) FROM wp_wff_transactions WHERE loan_id='.$id)===$txcount,'Changing payment date never duplicates ledger entry');
+$paid['paid_on']='2024-06-10';check(!is_wp_error(WFF_Loans::save_payment($paid)),'Historical date can be corrected');
+$paid['installment_no']='30';$paid['paid_on']='2026-11-10';$paid['principal_amount']='14500';$paid['interest_amount']='2500';check(!is_wp_error(WFF_Loans::save_payment($paid)),'Current installment can be marked paid');
 $full=WFF_Loans::list_loans(req(array('full_id'=>$id)))['items'][0];check($full['schedule'][0]['status']==='paid'&&$full['schedule'][29]['status']==='paid','Full reload preserves paid flags');
 check($full['paid_count']===2&&$full['remaining_installments']===58,'Paid and remaining installment counts');check($full['recorded_total']===34600.0&&$full['planned_total']===1056000.0&&$full['remaining_amount']===1021400.0,'Actual and expected cash totals correct');check($full['remaining_principal']===770500.0,'Interest never reduces principal');
 $config['id']=$id;$config['repayment_total']='1100000';check(!is_wp_error(WFF_Loans::save_loan(req($config))),'Contract total can be supplied');$full=WFF_Loans::list_loans(req(array('full_id'=>$id)))['items'][0];check($full['remaining_amount']===1065400.0,'Explicit total overrides automatic amount');
