@@ -15,7 +15,10 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
    cardPayments:{today:'2026-11-13',cards:{4:{configured:false,periods:[{statement_on:'2026-11-01',starts_on:'2026-11-01',due_on:null,manual:true,status:'pending',payment:null}]}}},
    loans:{today:'2026-11-13',items:[{id:1,name:'信用貸款',scope:'family',status:'active',tracking_mode:'simple',regular_payment:8739,monthly_payment:8739,due_day:9,paid_count:0,next_due:{number:1,due_on:'2026-11-09'},schedule:[{number:1,due_on:'2026-11-09',scheduled_amount:8739,status:'upcoming'}]}]},
    activities:[{action:'save_card_payment',action_label:'登記或修改信用卡繳費',local_time:'2026-11-13 15:00:00',display_name:'測試管理員',details:'11 月繳費 6900 元'}]};
-  window.fetch=async(url,opts={})=>{window.posts.push({url,...opts});let value={saved:true,id:20};if(!opts.method||opts.method==='GET')value=url.includes('/meta')?fixture.meta:url.includes('/dashboard')?fixture.dashboard:url.includes('/transactions')?fixture.transactions:url.includes('/card-payments')?fixture.cardPayments:url.includes('/loans')?fixture.loans:url.includes('/activity')?fixture.activities:{items:[]};return {ok:true,json:async()=>value};};
+  window.fetch=async(url,opts={})=>{window.posts.push({url,...opts});
+   if(opts.method==='POST'&&url.endsWith('/loans/1/payments')&&fixture.fullLoan){const data=JSON.parse(opts.body);const row=fixture.fullLoan.schedule.find(x=>x.number===Number(data.installment_no));if(!row.paid_on){fixture.fullLoan.paid_count++;fixture.fullLoan.remaining_installments--;fixture.fullLoan.recorded_total+=Number(data.paid_amount);fixture.fullLoan.remaining_amount-=Number(data.paid_amount);}Object.assign(row,{status:'paid',paid_on:data.paid_on,paid_amount:Number(data.paid_amount)});}
+   if(opts.method==='DELETE'&&url.endsWith('/loans/1')){fixture.loans.items=[];fixture.fullLoan=null;}
+   let value={saved:true,id:20};if(!opts.method||opts.method==='GET')value=url.includes('/meta')?fixture.meta:url.includes('/dashboard')?fixture.dashboard:url.includes('/transactions')?fixture.transactions:url.includes('/card-payments')?fixture.cardPayments:url.includes('/loans')&&url.includes('full_id=1')?{items:[fixture.fullLoan]}:url.includes('/loans')?fixture.loans:url.includes('/activity')?fixture.activities:{items:[]};return {ok:true,json:async()=>value};};
  });
  const source=fs.readFileSync('assets/js/app.js','utf8').replace('  start();','  window.app={S,render,openModal,resetModal,show,reload,go};');await page.addScriptTag({content:source});
  await page.evaluate(()=>{Object.assign(app.S,{hid:1,view:'dashboard',households:[{id:1,name:'測試家庭'}],meta:fixture.meta,dashboard:fixture.dashboard,transactions:fixture.transactions,cardPayments:fixture.cardPayments,loans:fixture.loans});app.render();});
@@ -44,7 +47,34 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
  assert(await page.getByText('已繳費備查，不計入支出').count());assert.equal(await page.locator('[data-action="duplicate-transaction"]').count(),0);await page.locator('[data-action="edit-transaction"]').click();assert.equal(await page.locator('[name="note"]').inputValue(),'轉帳清償');
  await page.evaluate(()=>{app.resetModal();app.S.view='transactions';app.S.codeSearch='仙台旅遊';app.S.transactions={items:[],total:40,page:1,pages:2,code_totals:[{scope:'family',kind:'expense',payment_status:'paid',amount:1200},{scope:'business',kind:'expense',payment_status:'paid',amount:300},{scope:'family',kind:'expense',payment_status:'unpaid',amount:50}]};app.render();});assert(await page.getByText(/已入帳支出 NT\$ 1,200/).count());assert(await page.getByText(/已入帳支出 NT\$ 300/).count());
  await page.evaluate(()=>{app.S.view='activity';app.S.activities=fixture.activities;app.render();});assert(await page.getByText('登記或修改信用卡繳費').count());assert.equal(await page.getByText('save_card_payment',{exact:true}).count(),0);
+
+ // Expansion requests the complete historical schedule, and paid reloads must keep it expanded.
+ await page.evaluate(()=>{
+  fixture.fullLoan={id:1,name:'歷史貸款',scope:'family',status:'active',tracking_mode:'simple',first_due_on:'2024-06-10',due_day:10,monthly_payment:17600,regular_payment:17600,installments:60,total_installments:60,paid_count:0,remaining_installments:60,recorded_total:0,planned_total:1056000,remaining_amount:1056000,schedule_complete:true,repayment_total:0,opening_principal:0,
+   next_due:{number:1,due_on:'2024-06-10'},schedule:Array.from({length:60},(_,i)=>({number:i+1,due_on:new Date(2024,5+i,10).toLocaleDateString('sv-SE'),scheduled_amount:17600,status:i<30?'overdue':'upcoming',paid_amount:0}))};
+  fixture.loans={today:'2026-11-13',items:[{...fixture.fullLoan,schedule_complete:false,schedule:fixture.fullLoan.schedule.slice(24,42)}]};
+  app.S.view='loans';app.S.loanExpanded={};app.S.loans=fixture.loans;app.render();
+ });
+ assert.equal(await page.locator('.wff-loan-table tbody tr').count(),3);
+ await page.locator('[data-action="toggle-loan-schedule"]').click();await page.waitForTimeout(50);
+ assert.equal(await page.locator('.wff-loan-table tbody tr').count(),60);
+ await page.screenshot({path:'/tmp/finance170-loans.png'});
+ assert.match(await page.locator('.wff-loan-table tbody tr').first().textContent(),/2024\/06/);
+ assert((await page.evaluate(()=>posts)).some(x=>x.url.includes('full_id=1')));
+ await page.locator('[data-action="quick-pay-loan"][data-number="1"]').click();await page.waitForTimeout(100);
+ assert.equal(await page.locator('.wff-loan-table tbody tr').count(),60);
+ assert.equal(await page.locator('.wff-loan-table tbody tr').first().locator('.wff-loan-state').textContent(),'已繳');
+ assert(await page.getByText('NT$ 17,600',{exact:true}).count());
+ await page.locator('[data-action="edit-loan"]').click();assert.equal(await page.locator('[name="installments"]').inputValue(),'60');assert(await page.locator('[name="repayment_total"]').count());
+ const deletesBefore=(await page.evaluate(()=>posts)).filter(x=>x.url.endsWith('/loans/1')&&x.method==='DELETE').length;
+ async function deleteAttempt(answers){const seen=[];const handler=async d=>{seen.push(d.message());if(answers.shift())await d.accept();else await d.dismiss();};page.on('dialog',handler);await page.locator('[data-action="delete-loan"]').click();await page.waitForTimeout(50);page.off('dialog',handler);return seen;}
+ assert.equal((await deleteAttempt([false])).length,1);
+ assert.equal((await deleteAttempt([true,false])).length,2);
+ assert.equal((await page.evaluate(()=>posts)).filter(x=>x.url.endsWith('/loans/1')&&x.method==='DELETE').length,deletesBefore);
+ assert.equal((await deleteAttempt([true,true])).length,2);
+ const deleted=(await page.evaluate(()=>posts)).filter(x=>x.url.endsWith('/loans/1')&&x.method==='DELETE');assert.equal(deleted.length,deletesBefore+1);assert.equal(JSON.parse(deleted.at(-1).body).confirm_delete,true);assert.equal(JSON.parse(deleted.at(-1).body).confirmation_name,'歷史貸款');
+ assert.equal(await page.locator('.wff-overlay').count(),0);
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{app.S.view='dashboard';app.render();app.openModal('transaction',{scope:'family',kind:'expense'});});
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'/tmp/finance160-mobile.png'});
- assert.deepEqual(errors,[]);await browser.close();console.log('Browser regression passed: modal timer/fetch preservation, draft wallet defaults, day panels, undated credit payment, reference edits, loan components, code totals, audit labels and mobile layout.');
+ assert.deepEqual(errors,[]);await browser.close();console.log('Browser regression passed: modal timer/fetch preservation, draft wallet defaults, day panels, undated credit payment, reference edits, loan components, code totals, audit labels, full loan history from 2024, paid-state retention, two-confirmation deletion and mobile layout.');
 })().catch(e=>{console.error(e);process.exit(1)});

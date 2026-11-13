@@ -172,6 +172,7 @@ final class WFF_Storage {
             annual_rate decimal(8,4) NOT NULL DEFAULT 0,
             installments int(11) unsigned NOT NULL,
             monthly_payment decimal(15,2) NOT NULL,
+            repayment_total decimal(15,2) NOT NULL DEFAULT 0,
             first_due_on date NOT NULL,
             due_day tinyint(3) unsigned NOT NULL,
             status varchar(16) NOT NULL DEFAULT 'active',

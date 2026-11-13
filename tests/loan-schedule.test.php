@@ -102,4 +102,26 @@ foreach($paid_projection['schedule'] as $p) {
         expect($p['paid_amount'],12129.0,'Paid installment keeps its actual payment');
     }
 }
+
+// Full requested history must begin with installment one, even years before the current viewing window.
+$history=$tracker;$history['first_due_on']='2024-06-10';$history['due_day']=10;$history['monthly_payment']=17600;$history['amount_changes']=array();$history['installments']=60;$history['_full_schedule']=true;
+$history_pay=array(array('installment_no'=>1,'paid_amount'=>17600,'extra_principal'=>0,'principal_amount'=>15000,'interest_amount'=>2600,'paid_on'=>'2024-06-10','note'=>'已繳'));
+$full=invoke_private('projection',$history,$history_pay,0);
+expect(count($full['schedule']),60,'Full finite loan has every installment');
+expect($full['schedule'][0]['due_on'],'2024-06-10','Full history starts at first configured month');
+expect($full['schedule'][0]['number'],1,'First installment numbering preserved');
+expect($full['schedule'][0]['status'],'paid','Historical paid status retained');
+expect($full['schedule'][59]['due_on'],'2029-05-10','Final installment is exactly configured term');
+$summary=invoke_private('totals',$history,$history_pay,$full);
+expect($summary['planned_total'],1056000.0,'Term times monthly amount gives total');
+expect($summary['recorded_total'],17600.0,'Actual payment total');
+expect($summary['remaining_amount'],1038400.0,'Remaining total subtracts actual payment');
+expect($summary['remaining_installments'],59,'Remaining installments count actual marked periods');
+$history['repayment_total']=1100000;$summary=invoke_private('totals',$history,$history_pay,$full);
+expect($summary['remaining_amount'],1082400.0,'Explicit contract total takes priority');
+$history['installments']=0;$history['repayment_total']=0;
+$unbounded=invoke_private('projection',$history,$history_pay,0);
+expect($unbounded['schedule'][0]['due_on'],'2024-06-10','Unlimited tracker still exposes every historical month on expansion');
+$summary=invoke_private('totals',$history,$history_pay,$unbounded);
+expect($summary['remaining_amount'],null,'Unknown term and total do not fabricate remaining money');
 echo "Loan recurring due dates / month-end / leap years / unpaid / principal / interest / simple tracking: OK\n";

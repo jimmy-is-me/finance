@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.6.0 */
+/* WUMETAX Finance v1.7.0 */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -72,8 +72,15 @@
     S.meta=meta; S.dashboard=dashboard; S.transactions=transactions; S.cardPayments=cardPayments;
     if (S.view === 'activity') S.activities=await request(path('activity'));
     if (S.view === 'subscriptions') S.subscriptions=await request(path('subscriptions'));
-    if (S.view === 'loans') S.loans=await request(path('loans?offset='+S.loanWindowOffset));
+    if (S.view === 'loans') S.loans=await loadLoans();
     render();
+  }
+  async function loadLoans(){
+    const data=await request(path('loans?offset='+S.loanWindowOffset));
+    const expanded=(data.items||[]).filter(loan=>S.loanExpanded[loan.id]);
+    const full=await Promise.all(expanded.map(loan=>request(path('loans?offset='+S.loanWindowOffset+'&full_id='+loan.id))));
+    full.forEach(result=>{const loan=result.items?.[0];if(loan){const index=data.items.findIndex(x=>Number(x.id)===Number(loan.id));if(index>=0)data.items[index]=loan;}});
+    return data;
   }
   const card = (title,amount,tone,subtitle) =>
     '<article class="wff-metric '+tone+'"><div class="wff-metric-label">'+e(title)+'</div>'+
@@ -391,7 +398,7 @@
     const rows=(data.items||[]).filter(x=>S.loanScope==='all'||x.scope===S.loanScope);
     const live=rows.filter(x=>x.status==='active');
     const overdue=live.filter(x=>Number(x.overdue_count)>0).length;
-    const totalMonthly=live.reduce((sum,x)=>sum+Number(x.regular_payment||0),0);
+    const totalMonthly=live.filter(x=>x.next_due).reduce((sum,x)=>sum+Number(x.regular_payment||0),0);
     const paidCount=rows.reduce((sum,x)=>sum+Number(x.paid_count||0),0);
     const offset=Number(S.loanWindowOffset)||0;
     const month=new Date((data.today||new Date().toLocaleDateString('sv-SE'))+'T12:00:00');
@@ -441,8 +448,15 @@
        '<div><small>每月預計金額</small><strong>'+(Number(loan.regular_payment)>0?money(loan.regular_payment):'未設定')+'</strong></div>'+
        '<div><small>下一筆未確認</small><strong>'+e(nextText)+'</strong></div>'+
        '<div><small>固定繳款日</small><strong>每月 '+e(loan.due_day)+' 日</strong></div>'+
-       '<div><small>已標記繳款</small><strong>'+e(loan.paid_count)+' 期</strong></div>'+
+       '<div><small>已繳期數／總期數</small><strong>'+e(loan.paid_count)+' / '+(loan.total_installments?e(loan.total_installments):'未設定')+' 期</strong></div>'+
        '</div>'+
+       '<div class="wff-loan-stats wff-loan-summary">'+
+       '<div><small>預計總繳款（含利息）</small><strong>'+(loan.planned_total!=null?money(loan.planned_total):'未設定總額／期數')+'</strong></div>'+
+       '<div><small>累計已繳金額</small><strong>'+money(loan.recorded_total)+'</strong></div>'+
+       '<div><small>預計尚需繳款</small><strong>'+(loan.remaining_amount!=null?money(loan.remaining_amount):'未設定總額／期數')+'</strong></div>'+
+       '<div><small>剩餘未繳期數</small><strong>'+(loan.remaining_installments!=null?e(loan.remaining_installments)+' 期':'未設定總期數')+'</strong></div></div>'+
+       (loan.principal_total!=null?'<div class="wff-note">貸款本金 '+money(loan.principal_total)+' · 已記錄償還本金 '+money(loan.principal_paid)+' · '+(loan.principal_incomplete?'部分已繳期數未填本金，尚無法計算剩餘本金':'剩餘本金 '+money(loan.remaining_principal))+'</div>':'')+
+       (Number(loan.overpaid_amount)>0?'<div class="wff-note">累計已繳超出預計總繳款 '+money(loan.overpaid_amount)+'，請核對總額設定與實際繳款。</div>':'')+
        (loan.overdue_count>0?'<div class="wff-note wff-loan-warning">有 '+e(loan.overdue_count)+' 個過去月份尚未標記繳款；如已繳，可在下方補登。</div>':'')+
        '<div class="wff-loan-section-title"><h3>逐月繳款備忘</h3>'+
        '<span>每月自動推算 · 遇月底會調整為該月最後一天</span></div>'+
@@ -465,8 +479,8 @@
              '<button type="button" class="wff-textbtn" data-action="pay-loan" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">'+(p.paid_on?'修改紀錄':'詳細記錄')+'</button>'+
              (p.paid_on?'<button type="button" class="wff-textbtn" data-action="undo-loan-payment" data-id="'+e(loan.id)+'" data-number="'+e(p.number)+'">取消已繳</button>':'')+'</div></td>':'')+'</tr>';
        }).join('')+'</tbody></table></div>'+
-       (installments.length>3?'<button type="button" class="wff-textbtn wff-loan-expand" data-action="toggle-loan-schedule" data-id="'+e(loan.id)+'">'+(expanded?'收合 ↑':'展開全部月份 ↓')+'</button>':'')+
-       '<p class="wff-small">到期自動新增未繳費收支；標記已繳後才計入實際支出，不會自動扣款。'+
+       ((installments.length>3||loan.schedule_complete===false)?'<button type="button" class="wff-textbtn wff-loan-expand" data-action="toggle-loan-schedule" data-id="'+e(loan.id)+'">'+(expanded?'收合 ↑':'展開所有期數（從起始月） ↓')+'</button>':'')+
+       '<p class="wff-small">'+(!loan.total_installments?'尚未設定總期數，展開會列出起始月份至目前前後的已知排程。':'預計總繳款依各期設定加總，或依手動輸入總額優先計算。')+'到期自動新增未繳費收支；標記已繳後才計入實際支出，不會自動扣款。'+
        (!simple?'此筆為舊版貸款，原始本金及利率資料仍保留。':'')+'</p></article>';
     }).join('');
     return heading+cards+filter+(list||'<section class="wff-panel">'+empty('目前還沒有每月繳款紀錄，新增後會自動產生每月繳款日期')+'</section>')+
@@ -767,12 +781,18 @@
        '<div class="wff-form-grid">'+
        field('所屬帳本','<select name="scope">'+selectValues([['family','家庭'],['business','公司']],d.scope||'family')+'</select>')+
        field('銀行／貸款機構（選填）','<input name="lender" value="'+e(d.lender||'')+'" maxlength="120" placeholder="例如：玉山銀行">')+'</div>'+
+       '<div class="wff-form-grid">'+
+       field('貸款總期數（選填）','<input name="installments" type="number" min="1" max="2400" step="1" value="'+e(Number(d.installments)||'')+'" placeholder="例如 60，不填則持續追蹤" '+(d.id&&d.tracking_mode!=='simple'?'readonly':'')+'>')+
+       field('預計總繳款（含利息，選填）','<input name="repayment_total" type="number" min="0" step=".01" value="'+e(Number(d.repayment_total)||'')+'" placeholder="不填則依總期數與月繳金額計算">')+'</div>'+
+       field('貸款本金總額（選填）','<input name="opening_principal" type="number" min="0" step=".01" value="'+e(Number(d.opening_principal)||'')+'" placeholder="僅計算本金，不包含利息" '+(d.id&&d.tracking_mode!=='simple'?'readonly':'')+'>')+
+       '<p class="wff-small">設定總期數後不再產生超過期數的排程；超出期數的未繳排程會移除，已繳紀錄保留。剩餘金額以預計總繳款減去實際已繳金額計算；本金則依逐期填寫的本金另行計算。</p>'+
        field('備註（選填）','<input name="notes" maxlength="255" value="'+e(d.notes||'')+'" placeholder="例如：每月自動扣款">')+
        (d.id&&d.tracking_mode==='simple'?field('新金額從哪個月份開始','<input name="amount_change_from" type="month" required value="'+e(d.amount_change_from||new Date().toLocaleDateString('sv-SE').slice(0,7))+'">')+
        '<p class="wff-small">若貸款金額調漲，修改上方金額並選擇開始適用的月份；已繳期數及實際付款金額都不會被改動。未變更金額時無須調整這一欄。</p>':'')+
        field('追蹤狀態','<select name="status">'+selectValues([['active','持續追蹤'],['closed','停止追蹤']],d.status||'active')+'</select>')+
        (d.id && d.tracking_mode!=='simple'?'<div class="wff-note">舊版貸款的本金、年利率與期數資料會原樣保留，不需要重新填寫。如已有繳款，首次日期和部分金額不可修改。</div>':'')+
-       '<button type="submit" class="wff-button wff-primary">儲存每月繳款 ✓</button></form>';
+       '<button type="submit" class="wff-button wff-primary">儲存每月繳款 ✓</button></form>'+
+       (d.id&&isOwner()?'<div class="wff-loan-delete"><p>刪除會移除貸款設定及逐期備忘，已產生的收支紀錄保留。</p><button type="button" class="wff-button" data-action="delete-loan" data-id="'+e(d.id)+'">刪除此貸款（需兩次確認）</button></div>':'');
     } else if(type==='loan-payment'){
       const loan=(S.loans?.items||[]).find(x=>Number(x.id)===Number(d.loan_id));
       const entry=(loan?.schedule||[]).find(x=>Number(x.number)===Number(d.installment_no));
@@ -893,7 +913,7 @@
     S.view=view;S.nav=false;S.modal=null;
     if(view==='activity') S.activities=await request(path('activity'));
     if(view==='subscriptions') S.subscriptions=await request(path('subscriptions'));
-    if(view==='loans') S.loans=await request(path('loans?offset='+S.loanWindowOffset));
+    if(view==='loans') S.loans=await loadLoans();
     render();window.scrollTo({top:0,behavior:'auto'});
   }
   function clearReceiptDraft() {
@@ -1056,124 +1076,7 @@
     root.querySelectorAll('.wff-sort-target,.wff-sorting').forEach(x=>x.classList.remove('wff-sort-target','wff-sorting'));
     if(filtered.some((x,i)=>x!==ids[i]))persistCategoryOrder(group,filtered);
   });
-  root.addEventListener('dragend',()=>{
-    draggedCategory=null;
-    root.querySelectorAll('.wff-sort-target,.wff-sorting').forEach(x=>x.classList.remove('wff-sort-target','wff-sorting'));
-  });
-  root.addEventListener('click',ev=>{
-    const target=ev.target.closest('[data-action],[data-view]');
-    if (!target) return;
-    // Overlay clicks intentionally do nothing; only the X button closes.
-    if (target.dataset.action==='close-modal' || target.dataset.view) ev.preventDefault();
-    if (target.dataset.view) { attempt(()=>go(target.dataset.view)); return; }
-    const act=target.dataset.action,id=Number(target.dataset.id);
-    const item=S.transactions?.items.find(x=>Number(x.id)===id)||S.dashboard?.recent.find(x=>Number(x.id)===id);
-    if(act==='toggle-nav'){ S.nav=!S.nav;render(); }
-    if(act==='fallback-login'){
-      const form=root.querySelector('.wff-login-form');
-      if(form){ form.submit(); }
-    }
-    if(act==='close-modal'){ resetModal(); }
-    if(act==='new-transaction'){openModal('transaction',{scope:'family',kind:'expense'});}
-    if(act==='view-receipt'){
-      attempt(async()=>{
-        // Open synchronously to avoid popup blockers.
-        const area=root.querySelector('.wff-receipt-preview');
-        const imageData=await request(path('transactions/'+id+'/receipt'));
-        if(area){area.innerHTML='<img alt="已存收據" src="'+e(imageData.data_url)+'">';area.scrollIntoView({block:'nearest'});}
-        else {
-          const w=window.open('','_blank');
-          if(w){
-            w.document.title='Finance 收據';
-            w.document.body.style='margin:0;background:#111;display:grid;place-items:center;min-height:100vh';
-            const img=w.document.createElement('img');
-            img.src=imageData.data_url;img.alt='收據';img.style='max-width:100%;max-height:100vh;object-fit:contain';
-            w.document.body.appendChild(img);
-          }
-        }
-      });
-    }
-    if(act==='remove-receipt' && confirm('確定移除已存收據照片？')){
-      attempt(async()=>{await request(path('transactions/'+id+'/receipt'),'DELETE');
-        S.draft={...S.draft,...getFormData(root.querySelector('.wff-modal form')),has_receipt:0};render(true);show('已移除收據');});
-    }
-    if(act==='edit-transaction'&&item){
-      if(item.card_payment_id){
-        openModal('card-payment',{card_id:Number(item.account_id),period:{statement_on:item.statement_on,starts_on:item.statement_on,due_on:item.payment_due_on,manual:!item.payment_due_on,payment:{id:Number(item.card_payment_id),paid_on:item.occurred_on,amount:item.amount,scope:item.scope,note:item.card_note||'',tracking_code:item.tracking_code}}});
-      }else openModal('transaction',item);
-    }
-    if(act==='duplicate-transaction'&&item&&!item.card_payment_id){
-      const copy={...item};
-      delete copy.id; delete copy.created_at; delete copy.updated_at;
-      delete copy.creator_name; delete copy.created_by;
-      copy.duplicate_from=item.id;
-      openModal('transaction',copy);
-    }
-    if(act==='delete-transaction'&&item&&confirm('確定要刪除這筆 '+money(item.amount)+' 交易？')) {
-      attempt(async()=>{await request(path('transactions/'+id),'DELETE');await reload();show('已刪除交易');});
-    }
-    if(act==='delete-subscription')attempt(async()=>{
-      if(!confirm('刪除此已停止訂閱？歷史收支紀錄會保留。'))return;
-      await request(path('subscriptions/'+id),'DELETE');await reload();show('訂閱已刪除，歷史收支保留');
-    });
-    if(act==='copy-subscription'){
-      const item=S.subscriptions?.items.find(x=>Number(x.id)===id);
-      if(item)openModal('subscription',{...item.settings,name:item.settings.name+'（副本）',start_on:new Date().toLocaleDateString('sv-SE'),end_on:'',active:1});
-    }
-    if(act==='card-payment'){
-      const statement=target.dataset.statement;
-      const period=S.cardPayments?.cards?.[id]?.periods?.find(p=>p.statement_on===statement);
-      if(period&&canEdit())openModal('card-payment',{card_id:id,period});
-    }
-    if(act==='card-history'){
-      if(S.cardPayments?.cards?.[id]?.periods?.length)openModal('card-history',{card_id:id});
-    }
-    if(act==='delete-card-payment'&&canEdit()&&confirm('確定取消本期已繳？對應的繳費備查會同步移除，原消費記帳不變。')){
-      attempt(async()=>{
-        await request(path('card-payments/'+id),'DELETE');
-        resetModal();await reload();show('已取消本期已繳紀錄');
-      });
-    }
-    if(act==='new-subscription')openModal('subscription',{scope:'family',unit:'month',interval:1,active:1});
-    if(act==='edit-subscription'){
-      const item=S.subscriptions?.items.find(x=>Number(x.id)===id);
-      if(item)openModal('subscription',{...item.settings,id:item.id,active:item.active});
-    }
-    if(act==='subscription-paid')attempt(async()=>{
-      await request(path('subscriptions/payments/'+id),'PUT',{paid:target.dataset.paid==='1'});
-      await reload();show('繳費狀態已更新');
-    });
-    if(act==='new-loan'){openModal('loan',{scope:'family',status:'active'});}
-    if(act==='edit-loan'){
-      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
-      if(loan)openModal('loan',loan);
-    }
-    if(act==='loan-window-prev'||act==='loan-window-next'||act==='loan-window-today'){
-      const next=act==='loan-window-today'?0:
-        Math.max(-120,Math.min(120,S.loanWindowOffset+(act==='loan-window-prev'?-12:12)));
-      if(next!==S.loanWindowOffset){
-        attempt(async()=>{S.loanWindowOffset=next;S.loans=await request(path('loans?offset='+next));render();});
-      }
-    }
-    if(act==='quick-pay-loan'){
-      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
-      const number=Number(target.dataset.number);
-      const p=loan?.schedule?.find(x=>x.number===number);
-      if(loan && p && !p.paid_on && !Number(loan.regular_payment)){openModal('loan-payment',{loan_id:id,installment_no:number});return;}
-      if(loan && p && !p.paid_on){
-        attempt(async()=>{
-          await request(path('loans/'+id+'/payments'),'POST',{
-            installment_no:number,
-            paid_on:new Date().toLocaleDateString('sv-SE'),
-            paid_amount:loan.regular_payment||0,
-            note:''
-          });
-          await reload();show('已標記 '+loan.name+' 第 '+number+' 期繳款');
-        });
-      }
-    }
-    if(act==='pay-loan'){
-      const loan=(S.loans?.items||[]).find(x=>Number(x.id)===id);
+  root.addEventListener('dra…1926 tokens truncated…ms||[]).find(x=>Number(x.id)===id);
       const number=Number(target.dataset.number);
       if(loan?.schedule?.some(x=>x.number===number)){
         openModal('loan-payment',{loan_id:id,installment_no:number});
@@ -1187,7 +1090,12 @@
       });
     }
     if(act==='toggle-loan-schedule'){
-      S.loanExpanded[id]=!S.loanExpanded[id];render();
+      if(S.loanExpanded[id]){S.loanExpanded[id]=false;render();}
+      else attempt(async()=>{
+        const result=await request(path('loans?offset='+S.loanWindowOffset+'&full_id='+id));
+        const full=result.items?.find(x=>Number(x.id)===id);if(!full)throw new Error('找不到此貸款排程');
+        S.loans.items=S.loans.items.map(x=>Number(x.id)===id?full:x);S.loanExpanded[id]=true;render();
+      });
     }
     if(act==='new-category'){openModal('category');}
     if(act==='category-up'){moveCategory(id,-1);}

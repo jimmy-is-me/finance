@@ -30,7 +30,7 @@ class DB {
 }
 function check($ok,$msg){if(!$ok)throw new Exception($msg);}
 require __DIR__.'/../includes/class-wff-loans.php';
-$wpdb=new DB();$wpdb->data['loans'][1]=array('id'=>1,'household_id'=>1,'name'=>'Car','scope'=>'family','notes'=>'','ledger_next'=>0,'tracking_mode'=>'simple','first_due_on'=>'2026-08-31','due_day'=>31,'monthly_payment'=>5000,'status'=>'active');
+$wpdb=new DB();$wpdb->data['loans'][1]=array('id'=>1,'household_id'=>1,'name'=>'Car','scope'=>'family','notes'=>'','ledger_next'=>0,'tracking_mode'=>'simple','installments'=>0,'first_due_on'=>'2026-08-31','due_day'=>31,'monthly_payment'=>5000,'status'=>'active');
 WFF_Loans::generate(1);check(count($wpdb->data['transactions'])===2,'Only elapsed August and September are generated');
 check(array_column(array_values($wpdb->data['transactions']),'occurred_on')===array('2026-08-31','2026-09-30'),'Month-end clipping');
 foreach($wpdb->data['transactions'] as $t)check($t['payment_status']==='unpaid','Default unpaid');

@@ -1047,7 +1047,7 @@ final class WFF_API {
             'create_transaction'=>'新增一筆記帳','update_transaction'=>'修改記帳內容','delete_transaction'=>'刪除一筆記帳',
             'create_household'=>'建立家庭空間','save_category'=>'儲存記帳分類','reorder_categories'=>'調整分類順序','delete_category'=>'刪除記帳分類',
             'save_payment_tool'=>'儲存付款工具','save_card_payment'=>'登記或修改信用卡繳費','delete_card_payment'=>'取消信用卡已繳紀錄',
-            'create_loan'=>'新增貸款追蹤','update_loan'=>'修改貸款設定','save_loan_payment'=>'登記或修改貸款繳款','undo_loan_payment'=>'取消貸款已繳狀態',
+            'delete_loan'=>'刪除貸款設定（收支保留）','create_loan'=>'新增貸款追蹤','update_loan'=>'修改貸款設定','save_loan_payment'=>'登記或修改貸款繳款','undo_loan_payment'=>'取消貸款已繳狀態',
             'save_subscription'=>'儲存訂閱設定','delete_subscription'=>'刪除已停止的訂閱','subscription_paid'=>'標記收支為已繳費','subscription_unpaid'=>'取消收支已繳狀態',
             'save_receipt'=>'上傳或更換收據照片','delete_receipt'=>'刪除收據照片','remove_member'=>'移除家庭成員','change_member'=>'修改家庭成員權限',
             'create_invite'=>'建立成員邀請連結','accept_invite'=>'加入家庭空間','import_csv'=>'匯入記帳資料'

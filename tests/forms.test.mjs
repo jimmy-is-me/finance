@@ -145,3 +145,15 @@ test('audit table displays plain language server labels instead of raw event nam
  const a=app();a.api.S.activities=[{action:'save_loan_payment',action_label:'登記或修改貸款繳款',local_time:'2026-11-13 15:00:00',details:'第 1 期'}];
  const html=a.api.activity();assert.match(html,/登記或修改貸款繳款/);assert.doesNotMatch(html,/save_loan_payment/);assert.match(html,/15:00:00/);
 });
+
+
+test('loan settings expose optional term, repayment total and owner-only confirmed deletion',()=>{
+ const a=app();a.api.S.modal='loan';a.api.S.draft={id:1,name:'Loan',tracking_mode:'simple',installments:60,repayment_total:1056000,opening_principal:800000};
+ const html=a.api.modal();assert.match(html,/name="installments"/);assert.match(html,/name="repayment_total"/);assert.match(html,/name="opening_principal"/);assert.match(html,/data-action="delete-loan"/);assert.match(html,/兩次確認/);
+ a.api.S.meta.role='editor';assert.doesNotMatch(a.api.modal(),/data-action="delete-loan"/);
+ a.api.S.meta.role='owner';delete a.api.S.draft.id;assert.doesNotMatch(a.api.modal(),/data-action="delete-loan"/);
+});
+test('partial schedules always offer a request for the complete historical schedule',()=>{
+ const a=app();a.api.S.loans={today:'2026-11-13',items:[{id:1,name:'Loan',scope:'family',status:'active',tracking_mode:'simple',schedule_complete:false,schedule:[{number:30,due_on:'2026-11-10',status:'overdue'}],paid_count:2,total_installments:60,planned_total:1056000,recorded_total:35200,remaining_amount:1020800,remaining_installments:58}]};
+ const html=a.api.loans();assert.match(html,/展開所有期數（從起始月）/);assert.match(html,/1,056,000/);assert.match(html,/1,020,800/);assert.match(html,/58 期/);
+});

@@ -907,3 +907,9 @@ body.wff-standalone,#wff-app{font-family:Outfit,"Noto Sans TC","Microsoft JhengH
 #wff-app .wff-note-search .wff-checkline{display:flex;align-items:center;gap:8px;width:auto}
 #wff-app .wff-note-search input[type="checkbox"]{width:18px;height:18px;flex:none}
 #wff-app .wff-form input[readonly]{background:#f4f4f4;color:#121212}
+
+#wff-app .wff-loan-summary{margin-top:16px}
+#wff-app .wff-loan-summary strong{font-size:clamp(17px,2vw,24px);overflow-wrap:anywhere}
+#wff-app .wff-loan-delete{margin-top:24px;padding-top:18px;border-top:2px solid #121212;font-size:12px;line-height:1.8}
+#wff-app .wff-loan-delete button{border-color:#a51c1c;color:#a51c1c}
+#wff-app .wff-loan-delete button:hover{background:#a51c1c;color:#fff}

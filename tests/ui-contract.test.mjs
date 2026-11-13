@@ -27,7 +27,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.4.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.6.0'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.7.0'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -288,9 +288,11 @@ test('v1.2.7 new loans are simple tracking with no required APR or principal',()
  const end=js.indexOf("} else if(type==='loan-payment'){",start);
  const form=js.slice(start,end);
  assert.ok(start>0 && end>start);
- for(const old of ['name="opening_principal"','name="annual_rate"','name="installments"']){
+ for(const old of ['name="annual_rate"']){
    assert.ok(!form.includes(old),'old required field still visible: '+old);
  }
+ assert.ok(form.includes('貸款總期數（選填）'));
+ assert.ok(form.includes('貸款本金總額（選填）'));
  assert.ok(form.includes('每月預計金額（選填）'));
  assert.ok(form.includes('每月固定繳款日'));
  assert.ok(form.includes('銀行／貸款機構（選填）'));

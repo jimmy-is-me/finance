@@ -15,7 +15,8 @@ final class WFF_Loans {
             array('methods'=>'POST','callback'=>array(__CLASS__,'save_loan'),'permission_callback'=>$permission),
         ));
         register_rest_route(self::NS, $base.'/(?P<id>\d+)', array(
-            'methods'=>'PUT','callback'=>array(__CLASS__,'save_loan'),'permission_callback'=>$permission
+            array('methods'=>'PUT','callback'=>array(__CLASS__,'save_loan'),'permission_callback'=>$permission),
+            array('methods'=>'DELETE','callback'=>array(__CLASS__,'delete_loan'),'permission_callback'=>$permission)
         ));
         register_rest_route(self::NS, $base.'/(?P<id>\d+)/payments', array(
             'methods'=>'POST','callback'=>array(__CLASS__,'save_payment'),'permission_callback'=>$permission
@@ -114,9 +115,13 @@ final class WFF_Loans {
         $selected=(new DateTimeImmutable('first day of this month',wp_timezone()))
             ->modify(($window_offset>=0?'+':'').(int)$window_offset.' months')->format('Y-m-d');
         $window_index=self::month_delta($first,$selected);
-        $start=max(0,$window_index-5);
-        $end=max(0,$window_index+12);
-        // No more than 18 entries per loan regardless of years elapsed.
+                $terms=(int)($loan['installments']??0);
+        $full=!empty($loan['_full_schedule']);
+        $last_recorded=$paid_by_number?max(array_keys($paid_by_number)):0;
+        $last_index=$terms>0?$terms-1:min(2399,max(0,$window_index+12,self::month_delta($first,$today)+12,$last_recorded-1));
+        $start=$full?0:min(max(0,$window_index-5),max(0,$last_index-17));
+        $end=$full?$last_index:min($last_index,max(0,$window_index+12));
+        // Default view stays small; a requested full schedule begins with installment one.
         $schedule=array();
         $monthly=(float)$loan['monthly_payment'];
         for($index=$start;$index<=$end;$index++) {
@@ -136,7 +141,7 @@ final class WFF_Loans {
         }
         // Find oldest unchecked due, including prior months outside the window.
         // Do not create any stored rows when showing a reminder.
-        $max_scan=max(1,min(2400,self::month_delta($first,$today)+14));
+        $max_scan=$terms>0?$terms:max(1,min(2400,self::month_delta($first,$today)+14,$last_index+1));
         $next=null;$overdue=0;
         for($index=0;$index<$max_scan;$index++) {
             $due=self::due($loan,$index);
@@ -158,7 +163,7 @@ final class WFF_Loans {
             'recorded_total'=>round($total,2),
             'remaining_principal_estimate'=>0,'regular_payment'=>$next?self::amount_for_installment($loan,$next['number']):$monthly,
             'simple'=>true,
-            'window_offset'=>$window_offset
+            'window_offset'=>$window_offset,'schedule_complete'=>$start===0&&$end===$last_index,'schedule_total'=>$last_index+1
         );
     }
     private static function regular_amount($loan) {
@@ -222,11 +227,35 @@ final class WFF_Loans {
             'regular_payment'=>$regular,
         );
     }
+    private static function totals($loan,$payments,$state){
+        $terms=(int)($loan['installments']??0);$paid=0.0;$principal_paid=0.0;$with_principal=0;$recorded=0;
+        foreach($payments as $p){
+            if(empty($p['paid_on']))continue;
+            $recorded++;$paid+=(float)$p['paid_amount']+(float)($p['extra_principal']??0);
+            if(isset($p['principal_amount'])){$principal_paid+=(float)$p['principal_amount']+(float)($p['extra_principal']??0);$with_principal++;}
+        }
+        $planned=(float)($loan['repayment_total']??0);$manual=$planned>0;
+        if(!$manual&&$terms>0){
+            $planned=0.0;$known=true;
+            for($i=1;$i<=$terms;$i++){
+                $amount=($loan['tracking_mode']??'')==='simple'?self::amount_for_installment($loan,$i):self::regular_amount($loan);
+                if($amount<=0)$known=false;
+                $planned+=$amount;
+            }
+            if(!$known)$planned=null;
+        }elseif(!$manual)$planned=null;
+        $principal=(float)($loan['opening_principal']??0);
+        return array('total_installments'=>$terms,'remaining_installments'=>$terms>0?max(0,$terms-(int)$state['paid_count']):null,
+            'recorded_total'=>round($paid,2),'planned_total'=>$planned===null?null:round($planned,2),'planned_total_manual'=>$manual,
+            'remaining_amount'=>$planned===null?null:round(max(0,$planned-$paid),2),'overpaid_amount'=>$planned===null?0:round(max(0,$paid-$planned),2),
+            'principal_total'=>$principal>0?$principal:null,'principal_paid'=>round($principal_paid,2),'principal_incomplete'=>$recorded>$with_principal,
+            'remaining_principal'=>$principal>0&&$recorded===$with_principal?round(max(0,$principal-$principal_paid),2):null);
+    }
     public static function generate($hid=0) {
         global $wpdb;
         $table=WFF_Storage::table('loans');$tx=WFF_Storage::table('transactions');$cats=WFF_Storage::table('categories');$pay=WFF_Storage::table('loan_payments');$members=WFF_Storage::table('members');
         $where=$hid?$wpdb->prepare(' AND household_id=%d',$hid):'';
-        $rows=$wpdb->get_results("SELECT * FROM $table WHERE status='active' AND ledger_next<2400 AND (tracking_mode='simple' OR ledger_next<installments) AND DATE_ADD(first_due_on,INTERVAL ledger_next MONTH)<='".esc_sql(wp_date('Y-m-d'))."' $where ORDER BY updated_at,id LIMIT 100",ARRAY_A);
+        $rows=$wpdb->get_results("SELECT * FROM $table WHERE status='active' AND ledger_next<2400 AND (installments=0 OR ledger_next<installments) AND DATE_ADD(first_due_on,INTERVAL ledger_next MONTH)<='".esc_sql(wp_date('Y-m-d'))."' $where ORDER BY updated_at,id LIMIT 100",ARRAY_A);
         foreach($rows as $loan){
             $lock='wff_loan_'.md5($wpdb->prefix.$loan['id']);
             if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s,0)',$lock))!==1)continue;
@@ -244,7 +273,7 @@ final class WFF_Loans {
                 $owner=(int)$wpdb->get_var($wpdb->prepare("SELECT user_id FROM $members WHERE household_id=%d AND role='owner' ORDER BY user_id LIMIT 1",$loan['household_id']));
                 for($batch=0;$batch<24;$batch++){
                     $index=(int)$loan['ledger_next'];$num=$index+1;$due=self::due($loan,$index);
-                    if($index>=2400||$due>wp_date('Y-m-d')||($loan['tracking_mode']!=='simple'&&$num>(int)$loan['installments']))break;
+                    if($index>=2400||$due>wp_date('Y-m-d')||((int)$loan['installments']>0&&$num>(int)$loan['installments']))break;
                     $existing=$wpdb->get_var($wpdb->prepare("SELECT id FROM $tx WHERE loan_id=%d AND loan_installment=%d",$loan['id'],$num));
                     if(!$existing){
                         $p=$wpdb->get_row($wpdb->prepare("SELECT * FROM $pay WHERE loan_id=%d AND installment_no=%d",$loan['id'],$num),ARRAY_A);
@@ -268,6 +297,8 @@ final class WFF_Loans {
             "SELECT * FROM $table WHERE household_id=%d ORDER BY
              CASE WHEN status='active' THEN 0 ELSE 1 END,id DESC LIMIT 100",$hid
         ),ARRAY_A);
+        $full_id=(int)$request->get_param('full_id');
+        if($full_id){$rows=array_values(array_filter($rows,function($row)use($full_id){return (int)$row['id']===$full_id;}));if(!$rows)return self::error('找不到此家庭的貸款',404);}
         $offset=max(-120,min(120,(int)$request->get_param('offset')));
         $all=array();
         foreach($rows as $loan){
@@ -286,8 +317,11 @@ final class WFF_Loans {
                 $default_no=max(1,$last_paid+1,$this_month,$latest_change);
                 $loan['amount_change_from']=substr(self::due($loan,min(2399,$default_no-1)),0,7);
             }
+            $loan['_full_schedule']=$full_id===(int)$loan['id'];
             $state=self::projection($loan,$pay,$offset);
-            $all[]=array_merge($loan,$state);
+            $totals=self::totals($loan,$pay,$state);
+            unset($loan['_full_schedule']);
+            $all[]=array_merge($loan,$state,$totals);
         }
         return array('items'=>$all,'today'=>wp_date('Y-m-d'),'window_offset'=>$offset);
     }
@@ -323,6 +357,26 @@ final class WFF_Loans {
         $principal=$old?(float)$old['opening_principal']:0;
         $rate=$old?(float)$old['annual_rate']:0;
         $months=$old?(int)$old['installments']:0;
+        if($mode==='simple'){
+            $raw_terms=$request->get_param('installments');
+            if($raw_terms!==null){
+                if($raw_terms!==''&&(!ctype_digit((string)$raw_terms)||(int)$raw_terms>2400))return self::error('總期數請填 1–2400 的整數，或留白');
+                $months=$raw_terms===''?0:(int)$raw_terms;
+            }
+            $raw_principal=$request->get_param('opening_principal');
+            if($raw_principal!==null)$principal=$raw_principal===''?0:self::amount($raw_principal,true);
+            if($principal===false)return self::error('貸款本金總額請填零或正數');
+        }
+        $repayment_total=$old?(float)($old['repayment_total']??0):0;
+        if($request->get_param('repayment_total')!==null){
+            $raw_total=$request->get_param('repayment_total');$repayment_total=$raw_total===''?0:self::amount($raw_total,true);
+            if($repayment_total===false)return self::error('預計總繳款金額請填零或正數');
+        }
+        if($months>0&&$old){
+            $last_recorded=(int)$wpdb->get_var($wpdb->prepare("SELECT MAX(installment_no) FROM $paytable WHERE household_id=%d AND loan_id=%d",$hid,$id));
+            if($last_recorded>$months)return self::error('總期數不能少於已登記繳款的最高期數');
+        }
+
         if(($count || (int)($old['ledger_next']??0)>0) && $first!==$old['first_due_on']){
             return self::error('已有繳款紀錄，不能改動最初扣款日期，避免歷史月份對應錯誤');
         }
@@ -382,7 +436,7 @@ final class WFF_Loans {
             'tracking_mode'=>$mode,
             'opening_principal'=>$principal,
             'annual_rate'=>round($rate,4),
-            'installments'=>$months,
+            'installments'=>$months,'repayment_total'=>$repayment_total,
             'monthly_payment'=>$monthly,
             'first_due_on'=>$first,
             'due_day'=>(int)substr($first,8,2),
@@ -393,6 +447,10 @@ final class WFF_Loans {
         $table=WFF_Storage::table('loans');
         $wpdb->query('START TRANSACTION');
         if($id){
+            $live=$wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id=%d AND household_id=%d FOR UPDATE",$id,$hid),ARRAY_A);
+            if(!$live){$wpdb->query('ROLLBACK');return self::error('此貸款已移除，請重新整理',404);}
+            if($months>0&&(int)$wpdb->get_var($wpdb->prepare("SELECT MAX(installment_no) FROM $paytable WHERE household_id=%d AND loan_id=%d",$hid,$id))>$months){$wpdb->query('ROLLBACK');return self::error('總期數不能少於已登記繳款的最高期數');}
+            if($months>0)$data['ledger_next']=min((int)$old['ledger_next'],$months);
             $ok=$wpdb->update($table,$data,array('id'=>$id,'household_id'=>$hid));
         }else{
             $data['household_id']=$hid;
@@ -438,6 +496,10 @@ final class WFF_Loans {
             ));
             if($synced===false){$wpdb->query('ROLLBACK');return self::error('更新尚未繳款期數失敗',500);}
         }
+        if($months>0){
+            $tx=WFF_Storage::table('transactions');
+            if($wpdb->query($wpdb->prepare("DELETE FROM $tx WHERE household_id=%d AND loan_id=%d AND loan_installment>%d AND payment_status='unpaid'",$hid,$id,$months))===false){$wpdb->query('ROLLBACK');return self::error('期數範圍更新失敗',500);}
+        }
         $wpdb->query('COMMIT');
         WFF_Storage::activity($hid,$old?'update_loan':'create_loan',$id);
         self::generate($hid);
@@ -456,7 +518,7 @@ final class WFF_Loans {
         if(($loan['tracking_mode']??'')==='simple')$loan['amount_changes']=self::amount_changes($hid,$id);
         $num=$request->get_param('installment_no');
         $simple=($loan['tracking_mode']??'amortized')==='simple';
-        $max_no=$simple?2400:(int)$loan['installments'];
+        $max_no=(int)$loan['installments']>0?(int)$loan['installments']:2400;
         if(!ctype_digit((string)$num)||(int)$num<1||(int)$num>$max_no){
             return self::error('繳款月份不正確');
         }
@@ -479,6 +541,11 @@ final class WFF_Loans {
         $note=mb_substr(sanitize_text_field($request->get_param('note')),0,255);
         self::generate($hid);
         $wpdb->query('START TRANSACTION');
+        $loans_table=WFF_Storage::table('loans');
+        $live=$wpdb->get_row($wpdb->prepare("SELECT * FROM $loans_table WHERE id=%d AND household_id=%d FOR UPDATE",$id,$hid),ARRAY_A);
+        if(!$live){$wpdb->query('ROLLBACK');return self::error('此貸款已移除，請重新整理',404);}
+        if((int)$live['installments']>0&&(int)$num>(int)$live['installments']){$wpdb->query('ROLLBACK');return self::error('繳款期數超過貸款總期數');}
+
         $table=WFF_Storage::table('loan_payments');
         $existing=(int)$wpdb->get_var($wpdb->prepare(
             "SELECT id FROM $table WHERE household_id=%d AND loan_id=%d AND installment_no=%d",
@@ -541,4 +608,27 @@ final class WFF_Loans {
         WFF_Storage::activity($hid,'undo_loan_payment',(int)$request['id'],'第'.(int)$request['number'].'期');
         return array('deleted'=>(bool)$ok);
     }
+    public static function delete_loan($request){
+        global $wpdb;$hid=(int)$request['hid'];$id=(int)$request['id'];
+        $auth=self::authorize($hid,true);if(is_wp_error($auth))return $auth;
+        $members=WFF_Storage::table('members');
+        if($wpdb->get_var($wpdb->prepare("SELECT role FROM $members WHERE household_id=%d AND user_id=%d",$hid,get_current_user_id()))!=='owner')return self::error('只有家庭管理員可刪除貸款',403);
+        $loan=self::loan($hid,$id);if(!$loan)return self::error('找不到貸款',404);
+        if($request->get_param('confirm_delete')!==true||$request->get_param('confirmation_name')!==$loan['name'])return self::error('請完成兩次刪除確認');
+        $lock='wff_loan_'.md5($wpdb->prefix.$id);
+        if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s,5)',$lock))!==1)return self::error('貸款正在更新，請稍後重試',409);
+        try{
+            $wpdb->query('START TRANSACTION');$table=WFF_Storage::table('loans');
+            $live=$wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id=%d AND household_id=%d FOR UPDATE",$id,$hid),ARRAY_A);
+            if(!$live){$wpdb->query('ROLLBACK');return self::error('此貸款已移除',404);}
+            $tx=WFF_Storage::table('transactions');
+            $ok=$wpdb->update($tx,array('loan_id'=>null,'loan_installment'=>null),array('household_id'=>$hid,'loan_id'=>$id));
+            foreach(array('loan_payments','loan_amount_changes') as $name){if($ok!==false)$ok=$wpdb->delete(WFF_Storage::table($name),array('household_id'=>$hid,'loan_id'=>$id));}
+            if($ok!==false)$ok=$wpdb->delete($table,array('household_id'=>$hid,'id'=>$id));
+            if($ok===false){$wpdb->query('ROLLBACK');return self::error('刪除失敗，資料已保留，請重試',500);}
+            $wpdb->query('COMMIT');
+        }finally{$wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)',$lock));}
+        WFF_Storage::activity($hid,'delete_loan',$id,$loan['name'].'；已產生的收支保留');return array('deleted'=>true);
+    }
+
 }
