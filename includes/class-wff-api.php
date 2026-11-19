@@ -155,12 +155,21 @@ final class WFF_API {
         $h = WFF_Storage::table('households');
         $member_limit = (int) $wpdb->get_var($wpdb->prepare("SELECT member_limit FROM $h WHERE id=%d", $hid));
         $member_limit = max(1, $member_limit);
+        $templates=$wpdb->get_results($wpdb->prepare('SELECT category_id,note,payment_method,account_id,payment_channel_id FROM '.WFF_Storage::table('note_templates').' WHERE household_id=%d ORDER BY updated_at DESC,id DESC', $hid), ARRAY_A);
+        $categories=$wpdb->get_results($wpdb->prepare("SELECT * FROM $c WHERE household_id=%d ORDER BY scope,kind,sort_order ASC,id ASC", $hid), ARRAY_A);
+        foreach($categories as &$category){
+            $notes=array_filter(explode("\n",(string)($category['quick_notes']??'')),fn($note)=>$note!=='');
+            foreach($templates as $template)if((int)$template['category_id']===(int)$category['id'])$notes[]=$template['note'];
+            $category['quick_notes']=implode("\n",array_unique($notes));
+        }
+        unset($category);
         return array(
+            'note_templates' => $templates,
             'tracking_codes' => $wpdb->get_results($wpdb->prepare('SELECT id,name FROM '.WFF_Storage::table('tracking_codes').' WHERE household_id=%d ORDER BY id', $hid), ARRAY_A),
             'tracking_code_history' => $wpdb->get_col($wpdb->prepare("SELECT DISTINCT tracking_code FROM ".WFF_Storage::table('transactions')." WHERE household_id=%d AND tracking_code<>'' ORDER BY tracking_code", $hid)),
             'member_limit' => $member_limit,
             'role' => $role,
-            'categories' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $c WHERE household_id=%d ORDER BY scope,kind,sort_order ASC,id ASC", $hid), ARRAY_A),
+            'categories' => $categories,
             'accounts' => $wpdb->get_results($wpdb->prepare("SELECT * FROM $a WHERE household_id=%d ORDER BY sort_order,id", $hid), ARRAY_A),
             'members' => $wpdb->get_results($wpdb->prepare(
                 "SELECT m.user_id,m.role,m.joined_at,u.display_name,u.user_email FROM $m m INNER JOIN $users u ON u.ID=m.user_id WHERE m.household_id=%d ORDER BY FIELD(m.role,'owner','editor','viewer'),u.display_name", $hid
@@ -196,6 +205,23 @@ final class WFF_API {
         if (in_array($filters['kind'] ?? '', array('income','expense','transfer','card_payment'), true)) {
             $where .= " AND t.kind=%s";
             $params[] = $filters['kind'];
+        }
+        foreach(array('category_id','account_id','payment_channel_id','id') as $column){
+            if(isset($filters[$column]) && $filters[$column]!==''){
+                $value=max(0,(int)$filters[$column]);
+                if($column==='account_id'){$where.=' AND (t.account_id=%d OR t.destination_account_id=%d)';$params[]=$value;$params[]=$value;}
+                else{$where.=' AND '.($column==='category_id'?'COALESCE(t.category_id,0)':"t.$column").'=%d';$params[]=$value;}
+            }
+        }
+        if(!empty($filters['category_ids'])){
+            $ids=array_values(array_unique(array_map('intval',explode(',',(string)$filters['category_ids']))));
+            $ids=array_slice(array_filter($ids,fn($id)=>$id>=0),0,100);
+            if($ids)$where.=' AND COALESCE(t.category_id,0) IN ('.implode(',',$ids).')';
+            else $where.=' AND 1=0';
+        }
+        if(!empty($filters['paid_only']))$where.=" AND t.payment_status='paid' AND t.kind IN ('income','expense')";
+        if(in_array($filters['payment_method']??'',array('cash','card','mobile','bank','other'),true)){
+            $where.=' AND t.payment_method=%s';$params[]=$filters['payment_method'];
         }
         // Search only this household's note field, before COUNT and LIMIT,
         // so matches work across every page instead of the visible 25 records.
@@ -234,6 +260,7 @@ final class WFF_API {
         $page = max(1, min(100000, (int) $r->get_param('page') ?: 1));
         $per = max(5, min(100, (int) $r->get_param('per_page') ?: 30));
         $filters = array('month' => $r->get_param('month'), 'scope' => $r->get_param('scope'), 'kind' => $r->get_param('kind'), 'search' => $r->get_param('search'),'code'=>$r->get_param('code'));
+        foreach(array('category_id','category_ids','account_id','payment_channel_id','payment_method','id','date','paid_only') as $key)$filters[$key]=$r->get_param($key);
         self::sync_card_payment_ledger($hid);
         WFF_Subscriptions::generate($hid);
         WFF_Loans::generate($hid);
@@ -358,6 +385,15 @@ final class WFF_API {
             $id = (int) $wpdb->insert_id;
         }
         if ($ok === false) { return self::error('儲存失敗', 500); }
+        // Learn only after the ledger save succeeds; never learn from failed validation.
+        if ($cat_id && trim($data['note'])!=='' && empty($original_tx['loan_id'])) {
+            $templates=WFF_Storage::table('note_templates');
+            $hash=hash('sha256',$data['note']);
+            $existing=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $templates WHERE household_id=%d AND category_id=%d AND note_hash=%s",$hid,$cat_id,$hash));
+            $template=array('household_id'=>$hid,'category_id'=>$cat_id,'note'=>$data['note'],'note_hash'=>$hash,'payment_method'=>$pay,'account_id'=>$account,'payment_channel_id'=>$channel,'updated_at'=>$now);
+            if($existing)$wpdb->update($templates,$template,array('id'=>$existing,'household_id'=>$hid));
+            else $wpdb->insert($templates,$template);
+        }
         WFF_Storage::activity($hid, $r->get_param('id') ? 'update_transaction' : 'create_transaction', $id);
         return array('id' => $id, 'saved' => true);
     }
@@ -492,6 +528,12 @@ final class WFF_API {
             $id = (int) $wpdb->insert_id;
         }
         if ($ok === false) { return self::error('儲存分類失敗，名稱可能重複'); }
+        // Editing the visible list also lets members remove automatically learned notes.
+        if(isset($data['quick_notes'])){
+            $templates=WFF_Storage::table('note_templates');
+            $learned=$wpdb->get_results($wpdb->prepare("SELECT id,note FROM $templates WHERE household_id=%d AND category_id=%d",$hid,$id),ARRAY_A);
+            foreach($learned as $template)if(!in_array($template['note'],$notes,true))$wpdb->delete($templates,array('id'=>$template['id'],'household_id'=>$hid,'category_id'=>$id));
+        }
         WFF_Storage::activity($hid, 'save_category', $id);
         return array('saved' => true, 'id' => $id);
     }

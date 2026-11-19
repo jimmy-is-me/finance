@@ -954,3 +954,17 @@ body.wff-standalone,#wff-app{font-family:Outfit,"Noto Sans TC","Microsoft JhengH
 #wff-app .wff-modal .wff-form .wff-field textarea{display:block;position:static;width:100%;min-height:140px;height:140px;max-height:none;margin:0;padding:12px 14px;border:1px solid #111;border-radius:0;background:#fff;color:#111;font:inherit;font-size:16px;line-height:1.7;box-sizing:border-box;resize:vertical}
 #wff-app .wff-modal .wff-form .wff-field:has(textarea) .wff-field-title{height:auto;white-space:normal}
 #wff-app .wff-modal .wff-form .wff-field:has(textarea) .wff-small{display:block;position:static;margin:0;line-height:1.6}
+
+#wff-app [data-action="dashboard-ledger"]{cursor:pointer}
+#wff-app [data-action="dashboard-ledger"]:hover{outline:2px solid #111;outline-offset:3px}
+#wff-app [data-action="dashboard-ledger"]:focus-visible{outline:3px solid #1745d1;outline-offset:3px}
+#wff-app .wff-drill-note{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:12px 0;padding:12px;border:1px solid #111;background:#fff9d7}
+#wff-app #wff-calculator{position:fixed;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));z-index:2147483600;font-size:14px;color:#111}
+#wff-app .wff-calc-toggle{display:block;margin-left:auto;border:2px solid #111;background:#f3cd21;color:#111;box-shadow:3px 3px 0 #111;padding:12px 18px;min-height:44px;font:inherit;font-weight:600;cursor:pointer}
+#wff-app .wff-calc-panel{position:absolute;right:0;bottom:60px;width:min(300px,calc(100vw - 36px));max-height:calc(100dvh - 100px);overflow:auto;box-sizing:border-box;border:2px solid #111;background:#fff;box-shadow:5px 5px 0 #111;padding:16px;display:grid;gap:10px}
+#wff-app .wff-calc-panel label{font-weight:600}
+#wff-app .wff-calc-panel output{display:block;min-height:32px;text-align:right;overflow-wrap:anywhere;font-size:22px}
+#wff-app .wff-calc-keys{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+#wff-app .wff-calc-keys button{min-width:0;min-height:44px;border:1px solid #111;background:#fff;color:#111;font:inherit;font-size:18px;cursor:pointer}
+#wff-app .wff-calc-keys button:hover{background:#f3cd21}
+#wff-app .wff-calc-panel>.wff-button{font-size:13px;padding:10px;min-height:44px}

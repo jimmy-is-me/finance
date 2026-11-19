@@ -73,16 +73,17 @@ final class WFF_Insights {
         }
 
         $categories = self::summarize($wpdb->get_results($wpdb->prepare(
-            "SELECT t.scope,c.name AS label,c.color AS color,SUM(t.amount) AS total FROM $t t
+            "SELECT t.scope,COALESCE(t.category_id,0) AS category_id,c.name AS label,c.color AS color,SUM(t.amount) AS total FROM $t t
              LEFT JOIN $c c ON c.id=t.category_id AND c.household_id=t.household_id
              WHERE t.payment_status='paid' AND t.household_id=%d AND t.kind='expense' AND t.occurred_on LIKE %s
              GROUP BY t.scope,t.category_id,c.name,c.color ORDER BY total DESC",
             $hid, $month.'%'
-        ),ARRAY_A),array('scope','label','color'));
+        ),ARRAY_A),array('scope','category_id','label','color'));
 
         // Radar dimensions are stable groups rather than arbitrary changing categories.
         $radar_labels = array('飲食','交通','生活用品','健康醫療','休閒娛樂','其他');
         $radar = array_fill_keys($radar_labels,0.0);
+        $radar_ids=array_fill_keys($radar_labels,array());
         foreach ($categories as $item) {
             if ($item['scope'] !== 'family') { continue; }
             $name = (string)$item['label'];
@@ -93,9 +94,10 @@ final class WFF_Insights {
             elseif (preg_match('/娛樂|旅|遊|電影|遊戲|購物/', $name)) { $group='休閒娛樂'; }
             else { $group='其他'; }
             $radar[$group] += $item['total'];
+            $radar_ids[$group][]=(int)$item['category_id'];
         }
         $radar_out = array();
-        foreach ($radar as $label=>$value) { $radar_out[] = array('label'=>$label,'total'=>$value); }
+        foreach ($radar as $label=>$value) { $radar_out[] = array('label'=>$label,'total'=>$value,'category_ids'=>$radar_ids[$label]); }
 
         // Payment tool usage: each expense is attributed to ONE channel
         // (wallet when present, otherwise funding account / legacy method).
@@ -167,12 +169,13 @@ final class WFF_Insights {
             );
         }
         $biggest = $wpdb->get_row($wpdb->prepare(
-            "SELECT occurred_on,amount,note FROM $t WHERE payment_status='paid' AND household_id=%d
+            "SELECT id,occurred_on,amount,note FROM $t WHERE payment_status='paid' AND household_id=%d
              AND kind='expense' AND occurred_on LIKE %s
              ORDER BY amount DESC,id DESC LIMIT 1", $hid, $month.'%'
         ), ARRAY_A);
         return array(
             'biggest_expense'=>$biggest ? array(
+                'id'=>(int)$biggest['id'],
                 'date'=>$biggest['occurred_on'],
                 'amount'=>(float)$biggest['amount'],
                 'note'=>$biggest['note']

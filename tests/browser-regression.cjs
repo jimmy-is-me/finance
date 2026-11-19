@@ -18,8 +18,11 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
   window.fetch=async(url,opts={})=>{window.posts.push({url,...opts});
    if(opts.method==='POST'&&url.endsWith('/loans/1/payments')&&fixture.fullLoan){const data=JSON.parse(opts.body);const row=fixture.fullLoan.schedule.find(x=>x.number===Number(data.installment_no));if(!row.paid_on){fixture.fullLoan.paid_count++;fixture.fullLoan.remaining_installments--;fixture.fullLoan.recorded_total+=Number(data.paid_amount);fixture.fullLoan.remaining_amount-=Number(data.paid_amount);}Object.assign(row,{status:'paid',paid_on:data.paid_on,paid_amount:Number(data.paid_amount)});}
    if(opts.method==='DELETE'&&url.endsWith('/loans/1')){fixture.loans.items=[];fixture.fullLoan=null;}
+   if(opts.method==='POST'&&url.endsWith('/transactions')){const data=JSON.parse(opts.body);fixture.meta.note_templates=[{category_id:data.category_id,note:data.note,payment_method:data.payment_method,account_id:data.account_id,payment_channel_id:data.payment_channel_id}];}
    let value={saved:true,id:20};if(!opts.method||opts.method==='GET')value=url.includes('/meta')?fixture.meta:url.includes('/dashboard')?fixture.dashboard:url.includes('/transactions')?fixture.transactions:url.includes('/card-payments')?fixture.cardPayments:url.includes('/loans')&&url.includes('full_id=1')?{items:[fixture.fullLoan]}:url.includes('/loans')?fixture.loans:url.includes('/activity')?fixture.activities:{items:[]};return {ok:true,json:async()=>value};};
  });
+ await page.addScriptTag({content:fs.readFileSync('assets/js/calculator.js','utf8')});
+ await page.addScriptTag({content:fs.readFileSync('assets/js/charts.js','utf8')});
  const source=fs.readFileSync('assets/js/app.js','utf8').replace('  start();','  window.app={S,render,openModal,resetModal,show,reload,go};');await page.addScriptTag({content:source});
  await page.evaluate(()=>{Object.assign(app.S,{hid:1,view:'dashboard',households:[{id:1,name:'測試家庭'}],meta:fixture.meta,dashboard:fixture.dashboard,transactions:fixture.transactions,cardPayments:fixture.cardPayments,loans:fixture.loans});app.render();});
  const heads=await page.locator('h2').allTextContents();assert(heads.indexOf('今日記帳')<heads.indexOf('昨日記帳'));assert(await page.getByText('昨日飲料').count());
@@ -126,5 +129,39 @@ const {chromium}=require('playwright');const fs=require('fs');const assert=requi
   await page.screenshot({path:'/tmp/finance180-filters-'+width+'.png'});
   assert(boxes.every(b=>b.h===52),'consistent filter heights at '+width+' '+JSON.stringify(boxes));
  }
- assert.deepEqual(errors,[]);await browser.close();console.log('Browser regression passed: modal timer/fetch preservation, draft wallet defaults, day panels, undated credit payment, reference edits, loan components, code totals, audit labels, full loan history from 2024, paid-state retention, two-confirmation deletion and mobile layout.');
+
+ // Saving a typed note makes it selectable with its last successful payment details.
+ await page.setViewportSize({width:1440,height:1000});
+ await page.evaluate(()=>{app.S.view='dashboard';app.S.ledgerFilter={};app.openModal('transaction',{scope:'family',kind:'expense'});});
+ await page.locator('[name="category_id"]').selectOption('1');await page.locator('[name="amount"]').fill('270');await page.locator('[name="note"]').fill('八方雲集');
+ await page.locator('[name="payment_method"]').selectOption('mobile');await page.locator('[name="payment_channel_id"]').selectOption('11');await page.locator('[name="account_id"]').selectOption('2');
+ await page.locator('#wff-transaction-form [type="submit"]').click();await page.waitForTimeout(100);
+ await page.evaluate(()=>app.openModal('transaction',{scope:'family',kind:'expense'}));
+ await page.locator('[name="category_id"]').selectOption('1');await page.locator('[name="quick_note"]').selectOption('八方雲集');
+ assert.equal(await page.locator('[name="note"]').inputValue(),'八方雲集');assert.equal(await page.locator('[name="payment_method"]').inputValue(),'mobile');assert.equal(await page.locator('[name="payment_channel_id"]').inputValue(),'11');assert.equal(await page.locator('[name="account_id"]').inputValue(),'2');
+ await page.locator('[name="note"]').fill('八方雲集 可自由修改');
+ await page.locator('[name="amount"]').fill('999');await page.evaluate(()=>window.savedForm=document.querySelector('#wff-transaction-form'));
+ // Calculator never recreates the in-progress transaction form.
+ await page.locator('[data-action="calc-toggle"]').click();
+ await page.locator('#wff-calc-expression').fill('(270+135)/3');await page.locator('#wff-calc-expression').press('Enter');assert.equal(await page.locator('#wff-calc-panel output').textContent(),'135');
+ assert(await page.evaluate(()=>savedForm===document.querySelector('#wff-transaction-form')));
+ await page.locator('[data-action="calc-apply"]').click();assert.equal(await page.locator('[name="amount"]').inputValue(),'135');assert.equal(await page.locator('[name="note"]').inputValue(),'八方雲集 可自由修改');
+ await page.locator('#wff-calc-expression').fill('1/0');await page.locator('#wff-calc-expression').press('Enter');assert.match(await page.locator('#wff-calc-panel output').textContent(),/除以零/);assert.equal(await page.locator('[name="amount"]').inputValue(),'135');
+ for(const width of [390,1440]){await page.setViewportSize({width,height:844});const b=await page.locator('#wff-calc-panel').boundingBox();assert(b.x>=0&&b.y>=0&&b.x+b.width<=width&&b.y+b.height<=844);await page.screenshot({path:'/tmp/finance190-calculator-'+width+'.png'});}
+ await page.locator('[data-action="calc-toggle"]').click();assert.equal(await page.locator('#wff-calc-panel').count(),0);assert(await page.evaluate(()=>savedForm===document.querySelector('#wff-transaction-form')));
+ await page.evaluate(()=>{app.resetModal();fixture.dashboard.insights={categories:[{category_id:1,scope:'family',label:'午餐',color:'#f0c020',total:270}],radar:[{label:'飲食',total:270,category_ids:[1]}],biggest_expense:{id:101,amount:270}};app.S.dashboard=fixture.dashboard;app.S.view='dashboard';app.S.month='2026-11';app.render();});
+ await page.locator('.wff-metric').filter({hasText:'家庭支出'}).click();await page.waitForTimeout(80);
+ let drillURL=(await page.evaluate(()=>posts)).filter(x=>x.url.includes('/transactions?')).at(-1).url;let query=new URL(drillURL,'http://finance.test').searchParams;
+ assert.equal(query.get('scope'),'family');assert.equal(query.get('kind'),'expense');assert.equal(query.get('paid_only'),'1');assert.equal(query.get('month'),'2026-11');
+ await page.locator('[data-action="clear-drill"]').click();await page.waitForTimeout(80);assert.equal(await page.locator('.wff-drill-note').count(),0);
+ await page.evaluate(()=>{app.S.view='dashboard';app.render();});
+ await page.locator('.wff-donut-legend [data-action="dashboard-ledger"]').first().click();await page.waitForTimeout(80);
+ query=new URL((await page.evaluate(()=>posts)).filter(x=>x.url.includes('/transactions?')).at(-1).url,'http://finance.test').searchParams;assert.equal(query.get('category_id'),'1');
+ await page.evaluate(()=>{app.S.view='dashboard';app.render();});
+ await page.locator('.wff-chart-small-list [data-action="dashboard-ledger"]').first().focus();await page.keyboard.press('Enter');await page.waitForTimeout(80);
+ query=new URL((await page.evaluate(()=>posts)).filter(x=>x.url.includes('/transactions?')).at(-1).url,'http://finance.test').searchParams;assert.equal(query.get('category_ids'),'1');
+ await page.evaluate(()=>{app.S.view='dashboard';app.render();});
+ await page.locator('.wff-metric').filter({hasText:'近期最大單筆支出'}).click();await page.waitForTimeout(80);
+ query=new URL((await page.evaluate(()=>posts)).filter(x=>x.url.includes('/transactions?')).at(-1).url,'http://finance.test').searchParams;assert.equal(query.get('id'),'101');
+ assert.deepEqual(errors,[]);await browser.close();console.log('Browser regression passed: learned notes and payment defaults, dashboard drilldown, calculator amount insertion, modal timer/fetch preservation, draft wallet defaults, day panels, undated credit payment, reference edits, loan components, code totals, audit labels, full loan history from 2024, paid-state retention, two-confirmation deletion and mobile layout.');
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -38,6 +38,7 @@
   return '<div class="wff-chart-scroll"><svg class="wff-graph" viewBox="0 0 '+w+' '+h+'" role="img" aria-label="'+esc(series.map(s=>s.label).join('、'))+' 趨勢折線圖">'+
     grid+ticks+drawing+'</svg></div><div class="wff-chart-legend">'+legend+'</div>';
  }
+ function drill(x){return x.drill?' data-action="dashboard-ledger" data-filter="'+esc(JSON.stringify(x.drill))+'" role="button" tabindex="0"':'';}
  function radar(items) {
   if(!items?.length)return empty();
   const cx=170,cy=166,r=114,n=items.length;
@@ -54,7 +55,7 @@
    '<title>'+esc(items[i].label+'：'+money(items[i].total))+'</title></circle>').join('');
   return '<svg class="wff-radar" viewBox="0 0 340 340" role="img" aria-label="家庭支出六維分類雷達圖">'+
    rings+'<polygon points="'+pts.map(x=>x.join(',')).join(' ')+'" fill="rgba(0,0,0,.18)" stroke="#111" stroke-width="3"/>'+dots+'</svg>'+
-   '<div class="wff-chart-small-list">'+items.map(x=>'<span>'+esc(x.label)+' <b>'+money(x.total)+'</b></span>').join('')+'</div>';
+   '<div class="wff-chart-small-list">'+items.map(x=>'<span'+drill(x)+'>'+esc(x.label)+' <b>'+money(x.total)+'</b></span>').join('')+'</div>';
  }
  function donut(items) {
   const values=(items||[]).filter(x=>number(x.total)>0).slice(0,7),sum=values.reduce((t,x)=>t+number(x.total),0);
@@ -66,14 +67,14 @@
   });
   return '<div class="wff-donut-layout"><div class="wff-donut" role="img" aria-label="支出占比甜甜圈圖" '+
    'style="background:conic-gradient('+segments.join(',')+');"><span><strong>'+money(sum)+'</strong><small>支出合計</small></span></div>'+
-   '<div class="wff-donut-legend">'+values.map((x,i)=>'<div data-wff-chart-tip="'+esc(x.label+'：'+money(x.total))+'" tabindex="0">'+
+   '<div class="wff-donut-legend">'+values.map((x,i)=>'<div data-wff-chart-tip="'+esc(x.label+'：'+money(x.total))+'"'+(x.drill?drill(x):' tabindex="0"')+'>'+
    '<span style="background:'+categoryShade(x,i)+'"></span><em>'+esc(x.label||'未分類')+'</em>'+
    '<b>'+Math.round(number(x.total)/sum*100)+'%</b></div>').join('')+'</div></div>';
  }
  function bars(rows) {
   const list=(rows||[]).filter(x=>number(x.total)>0).slice(0,10),maximum=Math.max(1,...list.map(x=>number(x.total)));
   if(!list.length)return empty();
-  return '<div class="wff-ranked-bars">'+list.map((x,i)=>'<div class="wff-ranked-row"'+tip(x.label||x.name,x.total)+'>'+
+  return '<div class="wff-ranked-bars">'+list.map((x,i)=>'<div class="wff-ranked-row"'+tip(x.label||x.name,x.total)+drill(x)+'>'+
    '<span>'+String(i+1).padStart(2,'0')+'　'+esc(x.label||x.name||'未分類')+'</span><b>'+money(x.total)+'</b>'+
    '<div class="wff-ranked-track"><i style="background:'+categoryShade(x,i)+';width:'+Math.max(1,number(x.total)/maximum*100)+'%"></i></div></div>').join('')+'</div>';
  }

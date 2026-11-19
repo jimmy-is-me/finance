@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.8.1 */
+/* WUMETAX Finance v1.9.0 */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -12,7 +12,7 @@
   ];
   const S = {
     view: 'dashboard', accountTab:'all', month: new Date().toLocaleDateString('sv-SE').slice(0,7),
-    scope: 'all', kind: 'all', noteSearch: '', codeSearch:'', codeAllMonths:false, modalEpoch:0, page: 1, households: [], hid: 0, meta: null,
+    scope: 'all', kind: 'all', ledgerFilter:{}, calcOpen:false, calcExpression:'', calcResult:'', noteSearch: '', codeSearch:'', codeAllMonths:false, modalEpoch:0, page: 1, households: [], hid: 0, meta: null,
     dashboard: null, transactions: null, subscriptions: null, loans: null, cardPayments:null, loanExpanded: {}, loanScope:'all', loanWindowOffset:0, activities: [], modal: null,
     draft: {}, busy: false, nav: false, notice: '', authError: '', loginDraft: '', invitationError: '', csv: '', csvName: '',
     importYear: new Date().getFullYear(), importPreview: null, invitation: null,
@@ -67,7 +67,7 @@
   async function reload() {
     if (!S.hid) { render(); return; }
     // Complete due-item generation before reading totals and newly created categories.
-    const transactions=await request(path('transactions?month='+encodeURIComponent(S.codeAllMonths?'all':S.month)+'&scope='+e(S.scope)+'&kind='+e(S.kind)+'&page='+S.page+'&per_page=25&search='+encodeURIComponent(S.noteSearch)+'&code='+encodeURIComponent(S.codeSearch)));
+    const transactions=await request(path('transactions?month='+encodeURIComponent(S.codeAllMonths?'all':S.month)+'&scope='+e(S.scope)+'&kind='+e(S.kind)+'&page='+S.page+'&per_page=25&search='+encodeURIComponent(S.noteSearch)+'&code='+encodeURIComponent(S.codeSearch)+'&'+new URLSearchParams(S.ledgerFilter||{}).toString()));
     const [meta,dashboard,cardPayments]=await Promise.all([request(path('meta')),request(path('dashboard?month='+encodeURIComponent(S.month))),request(path('card-payments'))]);
     S.meta=meta; S.dashboard=dashboard; S.transactions=transactions; S.cardPayments=cardPayments;
     if (S.view === 'activity') S.activities=await request(path('activity'));
@@ -82,8 +82,9 @@
     full.forEach(result=>{const loan=result.items?.[0];if(loan){const index=data.items.findIndex(x=>Number(x.id)===Number(loan.id));if(index>=0)data.items[index]=loan;}});
     return data;
   }
-  const card = (title,amount,tone,subtitle) =>
-    '<article class="wff-metric '+tone+'"><div class="wff-metric-label">'+e(title)+'</div>'+
+  const drill = filters => ' data-action="dashboard-ledger" data-filter="'+e(JSON.stringify(filters))+'" role="button" tabindex="0"';
+  const card = (title,amount,tone,subtitle,filters) =>
+    '<article class="wff-metric '+tone+'"'+(filters?drill(filters):'')+'><div class="wff-metric-label">'+e(title)+'</div>'+
     '<div class="wff-metric-value">'+money(amount)+'</div><div class="wff-metric-sub">'+e(subtitle)+'</div></article>';
   const simpleBtn = (label,action,extra='') => '<button class="wff-button '+extra+'" data-action="'+e(action)+'" type="button">'+label+'</button>';
   const authParams = () => new URLSearchParams(location.search);
@@ -276,8 +277,8 @@
     const f=d.totals.family, b=d.totals.business;
     const income=Number(f.income)+Number(b.income), expense=Number(f.expense)+Number(b.expense);
     const ins=d.insights||{}, C=window.WFFCharts;
-    const famCategories=(ins.categories||[]).filter(x=>x.scope==='family');
-    const bizCategories=(ins.categories||[]).filter(x=>x.scope==='business');
+    const famCategories=(ins.categories||[]).filter(x=>x.scope==='family').map(x=>({...x,drill:{scope:x.scope,kind:'expense',category_id:x.category_id??0,paid_only:1}}));
+    const bizCategories=(ins.categories||[]).filter(x=>x.scope==='business').map(x=>({...x,drill:{scope:x.scope,kind:'expense',category_id:x.category_id??0,paid_only:1}}));
     const largest=[...famCategories,...bizCategories].sort((x,y)=>Number(y.total)-Number(x.total))[0];
     const totalCredit=(d.cards||[]).reduce((sum,x)=>sum+Number(x.outstanding||0),0);
     const biggest=ins.biggest_expense;
@@ -297,7 +298,7 @@
         financePanel('近 30 天每日支出',C.lines(ins.last30||[],[
           {key:'family',label:'家庭支出'},{key:'business',label:'公司支出'}],'date',true),'30 DAYS')+
         '</div><div class="wff-two">'+
-        financePanel('家庭支出雷達圖',C.radar(ins.radar||[]),'6 DIMENSIONS')+
+        financePanel('家庭支出雷達圖',C.radar((ins.radar||[]).map(x=>({...x,drill:{scope:'family',kind:'expense',category_ids:(x.category_ids||[]).join(',')||'-1',paid_only:1}}))),'6 DIMENSIONS')+
         financePanel('家庭支出分類占比',C.donut(famCategories),'HOUSEHOLD')+
         '</div><div class="wff-two">'+
         financePanel('公司支出分類占比',C.donut(bizCategories),'BUSINESS')+
@@ -318,16 +319,16 @@
       '<h1>家庭與公司 <span class="wff-highlight">財務總覽</span></h1>'+
       '<p>每筆收支獨立保存，家庭與公司分開統計，同時掌握本月財務概況。</p></div>'+periodPicker()+'</div>'+
       '<div class="wff-metrics">'+
-      card('家庭支出',f.expense,'tone-pink','本月家庭生活費')+
-      card('公司收入',b.income,'tone-yellow','本月營業收入')+
-      card('公司支出',b.expense,'tone-purple','本月營運成本')+
-      card('整體淨額',income-expense,'tone-mint','家庭＋公司收入扣除支出')+
-      card('家庭收入',f.income,'tone-neutral','本月家庭其他收入')+
-      card('信用卡淨額估算',totalCredit,'tone-neutral','依已登錄交易推算，非銀行帳單')+
-      '<article class="wff-metric"><div class="wff-metric-label">最大支出分類</div>'+
+      card('家庭支出',f.expense,'tone-pink','本月家庭生活費',{scope:'family',kind:'expense',paid_only:1})+
+      card('公司收入',b.income,'tone-yellow','本月營業收入',{scope:'business',kind:'income',paid_only:1})+
+      card('公司支出',b.expense,'tone-purple','本月營運成本',{scope:'business',kind:'expense',paid_only:1})+
+      card('整體淨額',income-expense,'tone-mint','家庭＋公司收入扣除支出',{paid_only:1})+
+      card('家庭收入',f.income,'tone-neutral','本月家庭其他收入',{scope:'family',kind:'income',paid_only:1})+
+      card('信用卡淨額估算',totalCredit,'tone-neutral','依已登錄交易推算，非銀行帳單',{view:'accounts',tab:'credit'})+
+      '<article class="wff-metric"'+(largest?drill({scope:largest.scope,kind:'expense',category_id:largest.category_id??0,paid_only:1}):'')+'><div class="wff-metric-label">最大支出分類</div>'+
         '<div class="wff-metric-value wff-metric-text">'+e(largest?.label||'尚無資料')+'</div>'+
         '<div class="wff-metric-sub">'+money(largest?.total||0)+'</div></article>'+
-      '<article class="wff-metric"><div class="wff-metric-label">近期最大單筆支出</div>'+
+      '<article class="wff-metric"'+(biggest?drill({id:biggest.id,paid_only:1}):'')+'><div class="wff-metric-label">近期最大單筆支出</div>'+
         '<div class="wff-metric-value">'+money(biggest?.amount||0)+'</div>'+
         '<div class="wff-metric-sub">本月實際最大支出</div></article>'+
       '</div>'+
@@ -341,7 +342,7 @@
       '<span>今日支出 <b>'+money(today.totals?.expense||0)+'</b></span>'+
       '<span>今日總筆數 <b>'+e(today.total)+' 筆</b></span></div>'+
       (today.items?.length?'<div class="wff-today-list">'+today.items.map(x=>
-          '<div class="wff-today-item"><div><b>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</b>'+
+          '<div class="wff-today-item"'+drill({id:x.id,month:'all'})+'><div><b>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</b>'+
           '<small>'+e(scopeName(x.scope))+' · '+e(x.note||'無備註')+(x.payment_status==='unpaid'?' · 未繳費':'')+'</small></div>'+
           '<strong>'+money(x.amount)+'</strong></div>').join('')+'</div>':
           empty('今天還沒有記帳，按「新增記帳」即可建立第一筆'))+
@@ -352,7 +353,7 @@
       '<span>昨日支出 <b>'+money(yesterday.totals?.expense||0)+'</b></span>'+
       '<span>昨日總筆數 <b>'+e(yesterday.total)+' 筆</b></span></div>'+
       (yesterday.items?.length?'<div class="wff-today-list">'+yesterday.items.map(x=>
-          '<div class="wff-today-item"><div><b>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</b>'+
+          '<div class="wff-today-item"'+drill({id:x.id,month:'all'})+'><div><b>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</b>'+
           '<small>'+e(scopeName(x.scope))+' · '+e(x.note||'無備註')+(x.payment_status==='unpaid'?' · 未繳費':'')+'</small></div>'+
           '<strong>'+money(x.amount)+'</strong></div>').join('')+'</div>':
           empty('昨天還沒有記帳，按「新增記帳」即可建立第一筆'))+
@@ -363,14 +364,14 @@
         d.daily.slice(0,12).map(x=>'<tr><td>'+e(x.occurred_on.slice(5))+'</td><td>'+money(x.food)+'</td><td>'+money(x.other)+'</td><td><b>'+money(x.total)+'</b></td></tr>').join('')+'</tbody></table></div>':
         empty('這個月還沒有家庭花費'))+'</section>'+
       '<section class="wff-panel"><div class="wff-panel-head"><h2>最近交易</h2><button class="wff-textbtn" data-view="transactions">查看全部 →</button></div>'+
-      (latest.length?'<div class="wff-recent">'+latest.map(x=>'<div class="wff-recent-row"><div class="wff-recent-icon '+(x.kind==='income'?'income':'expense')+'">'+
+      (latest.length?'<div class="wff-recent">'+latest.map(x=>'<div class="wff-recent-row"'+drill({id:x.id,month:'all'})+'><div class="wff-recent-icon '+(x.kind==='income'?'income':'expense')+'">'+
         (x.kind==='income'?'↗':x.kind==='transfer'?'↔':'↙')+'</div><div><b>'+e(x.category_name||readable(x.kind))+'</b>'+
         '<small>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'　'+e(x.occurred_on)+' · '+scopeName(x.scope)+' · '+e(x.note||'無備註')+(x.payment_status==='unpaid'?' · 未繳費':'')+'</small></div>'+
         '<strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></div>').join('')+'</div>':
         empty('尚無交易紀錄'))+'</section></div>'+
       (cardList.length?'<section class="wff-panel"><div class="wff-panel-head"><h2>信用卡未清償淨額（估算）</h2>'+
         '<button class="wff-textbtn" data-view="accounts">管理付款工具 →</button></div>'+
-        '<div class="wff-cardstrip">'+cardList.map(c=>'<div class="wff-credit-card"><span>CREDIT CARD / ESTIMATE</span>'+
+        '<div class="wff-cardstrip">'+cardList.map(c=>'<div class="wff-credit-card"'+drill({account_id:c.id,month:'all'})+'><span>CREDIT CARD / ESTIMATE</span>'+
         '<strong>'+e(c.name)+'</strong><div>'+money(c.outstanding)+'</div></div>').join('')+'</div>'+
         '<p class="wff-small">不包含尚未匯入交易、前期帳單、手續費與銀行實際結帳日計算結果。</p></section>':'');
   }
@@ -511,6 +512,7 @@
       (S.noteSearch||S.codeSearch||S.codeAllMonths?'<button class="wff-textbtn" type="button" data-action="clear-note-search">清除</button>':'')+
       '</span></form>'+
       (canEdit()?simpleBtn('＋ 新增一筆','new-transaction','wff-primary'):'')+'</div>'+
+      (Object.keys(S.ledgerFilter||{}).length?'<div class="wff-drill-note">正在查看總覽選取的紀錄 <button class="wff-textbtn" data-action="clear-drill">清除總覽篩選</button></div>':'')+
       codeSummary(d.code_totals||[])+
       '<div class="wff-list-count">共 '+e(d.total)+' 筆 · 每頁最多 25 筆</div>'+
       (d.items.length?'<div class="wff-tablewrap"><table class="wff-transactions"><thead><tr>'+
@@ -688,7 +690,7 @@
     return '<select name="'+name+'"><option value="">'+(name==='code'?'全部代號':'不使用統計代號')+'</option>'+all.map(x=>'<option value="'+e(x)+'" '+(x===value?'selected':'')+'>'+e(x)+(managed.includes(x)?'':'（既有紀錄）')+'</option>').join('')+'</select>';
   }
   function quickNoteSelect(categoryId) {
-    const notes=String(categoryById(categoryId)?.quick_notes||'').split(/\r?\n/).filter(Boolean);
+    const notes=[...new Set([...String(categoryById(categoryId)?.quick_notes||'').split(/\r?\n/).filter(Boolean),...(S.meta?.note_templates||[]).filter(x=>String(x.category_id)===String(categoryId)).map(x=>x.note)])];
     return '<select name="quick_note" aria-label="備註快捷選項"><option value="">'+(notes.length?'選擇常用備註（也可自行填寫）':'此分類尚無快捷選項，可直接填寫備註')+'</option>'+notes.map(x=>'<option value="'+e(x)+'">'+e(x)+'</option>').join('')+'</select>';
   }
   function transactionFields(d,forTransaction=false) {
@@ -709,7 +711,7 @@
       ' style="background-color:'+categoryColor(c.color)+'">'+e(c.name)+'</option>').join('')+'</select>';
     return (transfer?'<div class="wff-note">轉帳或信用卡還款不會重複計入收支。</div>':field('分類',categorySelect))+
       (forTransaction?'<div class="wff-form-grid">'+field('備註',
-        '<span data-quick-notes>'+quickNoteSelect(d.category_id)+'</span><input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="選用快捷備註，或自行輸入">')+
+        '<span data-quick-notes>'+quickNoteSelect(d.category_id)+'</span><input name="note" maxlength="255" value="'+e(d.note||'')+'" placeholder="選用快捷備註，或自行輸入"><small class="wff-small">儲存後會記住此備註及付款方式。</small>')+
         field('統計代號（選填）',codeSelect('tracking_code',d.tracking_code||'')+'<small class="wff-small">可至分類管理新增常用代號。</small>')+'</div>':'')+
       '<div data-transaction-method'+(transfer?' hidden':'')+'>'+field('付款方式','<select name="payment_method">'+selectValues([['cash','現金'],['card','信用卡'],['mobile','行動支付'],['bank','銀行帳戶'],['other','其他']],method)+'</select>')+'</div>'+
       (method==='mobile'&&!transfer?field('使用的行動支付','<select name="payment_channel_id" required>'+
@@ -904,6 +906,26 @@
       '<div class="wff-modal-head"><div class="wff-kicker">FINANCE / EDIT</div><h2>'+e(title)+'</h2>'+
       '<button class="wff-modal-close" data-action="close-modal" aria-label="關閉" type="button">×</button></div><div class="wff-modal-notice wff-alert" role="status" hidden></div>'+body+'</section></div>';
   }
+  function calculator(){
+    return '<button type="button" class="wff-calc-toggle" data-action="calc-toggle" aria-expanded="'+S.calcOpen+'" aria-controls="wff-calc-panel">'+(S.calcOpen?'關閉計算機':'計算機')+'</button>'+
+      (S.calcOpen?'<section id="wff-calc-panel" class="wff-calc-panel" role="region" aria-label="小計算機"><label for="wff-calc-expression">小計算機</label><input id="wff-calc-expression" inputmode="decimal" maxlength="200" autocomplete="off" value="'+e(S.calcExpression)+'" placeholder="例如：120+80×2"><output aria-live="polite">'+e(S.calcResult||'0')+'</output><div class="wff-calc-keys">'+
+       ['C','⌫','(',')','7','8','9','÷','4','5','6','×','1','2','3','−','0','.','=','+'].map(key=>'<button type="button" data-action="calc-key" data-key="'+e(key)+'">'+key+'</button>').join('')+'</div>'+
+       (S.modal==='transaction'?'<button type="button" class="wff-button" data-action="calc-apply">帶入記帳金額（四捨五入）</button>':'')+'</section>':'');
+  }
+  function updateCalculator(){
+    const host=root.querySelector('#wff-calculator');if(!host)return;
+    const active=document.activeElement,input=active?.id==='wff-calc-expression',key=active?.dataset?.key;
+    host.innerHTML=calculator();
+    if(input)host.querySelector('#wff-calc-expression')?.focus({preventScroll:true});
+    else if(key)[...host.querySelectorAll('[data-key]')].find(button=>button.dataset.key===key)?.focus({preventScroll:true});
+  }
+  function calculatorKey(key){
+    if(key==='C'){S.calcExpression='';S.calcResult='';}
+    else if(key==='⌫'){S.calcExpression=S.calcExpression.slice(0,-1);S.calcResult='';}
+    else if(key==='='){try{S.calcResult=String(window.WFFCalculator.calculate(S.calcExpression));}catch(error){S.calcResult=error.message;}}
+    else if(S.calcExpression.length<200){S.calcExpression+=key;S.calcResult='';}
+    updateCalculator();
+  }
   function render(force=false) {
     const editor=root.querySelector('.wff-overlay');
     if(!force && S.modal && editor && editor.dataset.epoch===String(S.modalEpoch)){
@@ -922,7 +944,7 @@
     let content = ({
       dashboard,transactions,loans,subscriptions,accounts,categories,members,import:importView,activity
     })[S.view]();
-    root.innerHTML=header()+content+footer()+modal();
+    root.innerHTML=header()+content+footer()+modal()+'<div id="wff-calculator">'+calculator()+'</div>';
     const overlay=root.querySelector('.wff-overlay');if(overlay)overlay.dataset.epoch=String(S.modalEpoch);
     document.body.classList.toggle('wff-dialog-open',!!S.modal);
   }
@@ -1105,6 +1127,24 @@
     if (target.dataset.view) { attempt(()=>go(target.dataset.view)); return; }
     const act=target.dataset.action,id=Number(target.dataset.id);
     const item=S.transactions?.items.find(x=>Number(x.id)===id)||S.dashboard?.recent.find(x=>Number(x.id)===id);
+    if(act==='dashboard-ledger'){
+      attempt(async()=>{
+        const f=JSON.parse(target.dataset.filter||'{}');
+        if(f.view){S.accountTab=f.tab||'all';await go(f.view);return;}
+        S.scope=f.scope||'all';S.kind=f.kind||'all';S.noteSearch='';S.codeSearch='';S.codeAllMonths=f.month==='all';S.page=1;
+        S.ledgerFilter={...f};delete S.ledgerFilter.month;delete S.ledgerFilter.scope;delete S.ledgerFilter.kind;
+        S.view='transactions';await reload();window.scrollTo({top:0,behavior:'auto'});
+      });return;
+    }
+    if(act==='clear-drill'){S.ledgerFilter={};S.page=1;attempt(reload);return;}
+    if(act==='calc-toggle'){S.calcOpen=!S.calcOpen;updateCalculator();root.querySelector(S.calcOpen?'#wff-calc-expression':'.wff-calc-toggle')?.focus({preventScroll:true});return;}
+    if(act==='calc-key'){calculatorKey(target.dataset.key);return;}
+    if(act==='calc-apply'){
+      try{const result=window.WFFCalculator.calculate(S.calcExpression);const amount=root.querySelector('#wff-transaction-form [name="amount"]');
+        if(!amount||Math.round(result)<=0||Math.round(result)>10000000000)throw Error('請先開啟記帳並計算正數金額');
+        amount.value=String(Math.round(result));S.calcResult='已帶入 '+amount.value;updateCalculator();
+      }catch(error){S.calcResult=error.message;updateCalculator();}return;
+    }
     if(act==='toggle-nav'){ S.nav=!S.nav;render(); }
     if(act==='fallback-login'){
       const form=root.querySelector('.wff-login-form');
@@ -1318,8 +1358,16 @@
       const bills=form.querySelector('.wff-bill-dates');if(bills)bills.hidden=form.elements.kind.value!=='transfer';
     }
     if(S.modal==='transaction'&&t.name==='quick_note'&&t.value&&t.form?.id==='wff-transaction-form'){
-      t.form.elements.note.value=t.value;
-      t.value='';
+      const form=t.form,note=t.value;
+      form.elements.note.value=note;
+      const saved=(S.meta?.note_templates||[]).find(x=>String(x.category_id)===String(form.elements.category_id.value)&&x.note===note);
+      if(saved){
+        const data=getFormData(form),active=activeAccounts();
+        data.payment_method=saved.payment_method;
+        data.payment_channel_id=active.some(x=>x.type==='mobile'&&String(x.id)===String(saved.payment_channel_id))?saved.payment_channel_id:'';
+        data.account_id=active.some(x=>['cash','bank','credit'].includes(x.type)&&String(x.id)===String(saved.account_id))?saved.account_id:'';
+        form.querySelector('#wff-transaction-dynamic').innerHTML=transactionFields(data,true);
+      }else t.value='';
     }
     if(S.modal==='transaction' && t.name==='category_id' && t.form?.id==='wff-transaction-form') {
       updateCategorySelect(t.form);
@@ -1327,6 +1375,7 @@
     }
   });
   root.addEventListener('input',ev=>{
+    if(ev.target.id==='wff-calc-expression'){S.calcExpression=ev.target.value;S.calcResult='';const out=root.querySelector('#wff-calc-panel output');if(out)out.textContent='0';return;}
 
     const form=ev.target.form;
     if(form?.id==='wff-loan-payment-form'&&['principal_amount','interest_amount'].includes(ev.target.name)){
@@ -1334,6 +1383,12 @@
       total.readOnly=p!==''||i!=='';
       if(total.readOnly)total.value=(Number(p||0)+Number(i||0)).toFixed(2);
     }
+  });
+  root.addEventListener('keydown',ev=>{
+    if(ev.target.id==='wff-calc-expression'){
+      if(ev.key==='Enter'){ev.preventDefault();calculatorKey('=');}
+      if(ev.key==='Escape'){ev.preventDefault();S.calcOpen=false;updateCalculator();}
+    }else if(ev.target.matches('[data-action="dashboard-ledger"]')&&['Enter',' '].includes(ev.key)){ev.preventDefault();ev.target.click();}
   });
   root.addEventListener('submit', ev => {
     const form=ev.target;

@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 final class WFF_Storage {
     public static function table($name) {
         global $wpdb;
-        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','loan_amount_changes','receipts','subscriptions','card_payments','tracking_codes');
+        $allowed = array('households','members','invites','categories','accounts','transactions','activity','loans','loan_payments','loan_amount_changes','receipts','subscriptions','card_payments','tracking_codes','note_templates');
         if (!in_array($name, $allowed, true)) { return ''; }
         return $wpdb->prefix . 'wff_' . $name;
     }
@@ -18,6 +18,7 @@ final class WFF_Storage {
         $i = self::table('invites');
         $cat = self::table('categories');
         $codes = self::table('tracking_codes');
+        $templates = self::table('note_templates');
         $a = self::table('accounts');
         $t = self::table('transactions');
         $card_payments = self::table('card_payments');
@@ -58,6 +59,19 @@ final class WFF_Storage {
             PRIMARY KEY  (id),
             UNIQUE KEY token_hash (token_hash),
             KEY household_id (household_id)
+        ) $c;");
+        dbDelta("CREATE TABLE $templates (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            household_id bigint(20) unsigned NOT NULL,
+            category_id bigint(20) unsigned NOT NULL,
+            note varchar(255) NOT NULL,
+            note_hash char(64) NOT NULL,
+            payment_method varchar(16) NOT NULL,
+            account_id bigint(20) unsigned DEFAULT NULL,
+            payment_channel_id bigint(20) unsigned DEFAULT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY household_category_note (household_id,category_id,note_hash)
         ) $c;");
         dbDelta("CREATE TABLE $codes (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

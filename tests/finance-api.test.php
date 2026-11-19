@@ -10,6 +10,7 @@ require __DIR__.'/../includes/class-wff-api.php';
 function check($ok,$msg){if(!$ok)throw new Exception($msg);}
 function req($data=array()){return new Request(array_merge(array('hid'=>1),$data));}
 $wpdb=new Database();
+$wpdb->query('CREATE TABLE wp_wff_note_templates(id INTEGER PRIMARY KEY AUTOINCREMENT,household_id INTEGER,category_id INTEGER,note TEXT,note_hash TEXT,payment_method TEXT,account_id INTEGER,payment_channel_id INTEGER,updated_at TEXT,UNIQUE(household_id,category_id,note_hash))');
 $wpdb->query('CREATE TABLE users (ID INTEGER,display_name TEXT)');$wpdb->query("INSERT INTO users VALUES (1,'Owner')");
 $wpdb->query('CREATE TABLE wp_wff_members (household_id INTEGER,user_id INTEGER,role TEXT)');$wpdb->query("INSERT INTO wp_wff_members VALUES(1,1,'owner')");
 $wpdb->query('CREATE TABLE wp_wff_accounts(id INTEGER PRIMARY KEY,household_id INTEGER,name TEXT,type TEXT,statement_day INTEGER,due_day INTEGER)');
@@ -44,4 +45,22 @@ $dash=WFF_API::dashboard(req(array('month'=>'2026-10')));check($dash['today']['d
 $log=WFF_API::activity(req());check($log[0]['action_label']!=='save_card_payment','Audit action translated');check(substr($log[0]['local_time'],11)==='15:00:00','Audit date uses site timezone');
 $parser=new ReflectionMethod('WFF_API','parse_import');$parser->setAccessible(true);$parsed=$parser->invoke(null,array(array('日期','範圍','類型','金額','備註','代號'),array('2026-11-12','family','expense','100','A','TRIP'),array('2026-11-13','family','card_payment','7000','Paid','TRIP')),2026);
 check(count($parsed['items'])===1&&$parsed['items'][0]['tracking_code']==='TRIP'&&$parsed['skipped_references']===1,'Import preserves code and cannot turn reference into another expense');
+// Learned notes are scoped to the selected category and only updated on successful saves.
+$wpdb->query("ALTER TABLE wp_wff_categories ADD COLUMN scope TEXT");$wpdb->query("ALTER TABLE wp_wff_categories ADD COLUMN kind TEXT");
+$wpdb->query("INSERT INTO wp_wff_categories(id,household_id,name,color,scope,kind) VALUES(40,1,'Lunch','#ffffff','family','expense'),(41,1,'Business lunch','#ffffff','business','expense'),(42,2,'Other home','#ffffff','family','expense')");
+$wpdb->query("INSERT INTO wp_wff_accounts(id,household_id,name,type) VALUES(10,1,'LINE Pay','mobile')");
+$entry=array('category_id'=>40,'scope'=>'family','kind'=>'expense','occurred_on'=>'2026-11-13','amount'=>270,'note'=>'八方雲集','payment_method'=>'mobile','payment_channel_id'=>10,'account_id'=>4);
+$saved=WFF_API::save_transaction(req($entry));check(!is_wp_error($saved),'Normal transaction saves with learned note');$txid=$saved['id'];
+$template=$wpdb->get_row('SELECT * FROM wp_wff_note_templates WHERE category_id=40');check($template['note']==='八方雲集'&&$template['payment_method']==='mobile'&&$template['account_id']==4&&$template['payment_channel_id']==10,'Note retains wallet and funding source');
+$entry['payment_method']='cash';$entry['payment_channel_id']=null;$entry['account_id']=null;
+check(!is_wp_error(WFF_API::save_transaction(req($entry))),'Resaving same note succeeds');check((int)$wpdb->get_var('SELECT COUNT(*) FROM wp_wff_note_templates WHERE category_id=40')===1,'Identical note is deduplicated');check($wpdb->get_var('SELECT payment_method FROM wp_wff_note_templates WHERE category_id=40')==='cash','Latest successful payment preference wins');
+$entry['amount']=-1;$entry['note']='Must not learn';check(is_wp_error(WFF_API::save_transaction(req($entry))),'Invalid save rejected');check((int)$wpdb->get_var('SELECT COUNT(*) FROM wp_wff_note_templates')===1,'Failed save never learns notes');
+$entry['amount']=270;$entry['category_id']=42;check(is_wp_error(WFF_API::save_transaction(req($entry))),'Cannot learn another household category');
+$entry['category_id']=41;$entry['scope']='business';$entry['note']='八方雲集';check(!is_wp_error(WFF_API::save_transaction(req($entry))),'Same note in another valid category learns separately');check((int)$wpdb->get_var('SELECT COUNT(*) FROM wp_wff_note_templates')===2,'Category scope remains separate');
+$filtered=WFF_API::transactions(req(array('month'=>'2026-11','scope'=>'family','kind'=>'expense','category_id'=>40,'paid_only'=>1)));check($filtered['total']===2,'Overview category drill filters before pagination');
+$exact=WFF_API::transactions(req(array('month'=>'all','id'=>$txid)));check($exact['total']===1&&$exact['items'][0]['note']==='八方雲集','Overview exact entry drill returns one matching ledger row');
+check(WFF_API::transactions(req(array('month'=>'all','category_ids'=>'40,41','paid_only'=>1)))['total']===3,'Radar group filters include only selected categories');
+check(WFF_API::transactions(req(array('month'=>'all','category_ids'=>'-1')))['total']===0,'Empty radar groups do not expand to all entries');
+check(WFF_API::transactions(req(array('month'=>'all','category_id'=>42)))['total']===0,'Drilldown remains household scoped');
+echo "Learned category notes, payment defaults and overview drilldown tests passed\n";
 echo "Finance API: manual/fixed card payments, reference synchronization, rollback, legacy backfill, roles, household code totals, day summaries, audit labels and CSV passed\n";
