@@ -968,3 +968,61 @@ body.wff-standalone,#wff-app{font-family:Outfit,"Noto Sans TC","Microsoft JhengH
 #wff-app .wff-calc-keys button{min-width:0;min-height:44px;border:1px solid #111;background:#fff;color:#111;font:inherit;font-size:18px;cursor:pointer}
 #wff-app .wff-calc-keys button:hover{background:#f3cd21}
 #wff-app .wff-calc-panel>.wff-button{font-size:13px;padding:10px;min-height:44px}
+
+/* Cream paper / sky theme for the existing Finance workspace. */
+body.wff-standalone,#wff-app{
+ --paper:#fdf9f3;--ink:#2c2a3a;--sky:#38bdf8;--deep:#0ea5e9;--sky-soft:#e0f5ff;--coral:#fb7185;--coral-soft:#ffe7eb;
+ --hair:rgba(44,42,58,.10);--float:0 18px 50px -22px rgba(56,189,248,.45);--soft:0 10px 30px -16px rgba(44,42,58,.30);
+ color:var(--ink);font-family:Poppins,"Noto Sans TC","Microsoft JhengHei",sans-serif;
+ background:radial-gradient(rgba(44,42,58,.04) 1px,transparent 1px) 0 0/22px 22px,var(--paper)
+}
+#wff-app h1,#wff-app h2,#wff-app h3,#wff-app .wff-brand strong,#wff-app .wff-metric-value{font-family:inherit;font-weight:800;letter-spacing:-.025em}
+#wff-app .wff-highlight{border:0;background:linear-gradient(transparent 73%,var(--coral-soft) 73%,var(--coral-soft) 94%,transparent 94%)}
+#wff-app .wff-sidebar,#wff-app .wff-topbar,#wff-app .wff-mobile-bottom{background:rgba(253,249,243,.92);border-color:var(--hair);border-width:1px;backdrop-filter:blur(16px)}
+#wff-app .wff-brand:after{display:none}
+#wff-app .wff-brand-mark{background:linear-gradient(140deg,var(--sky),var(--deep));color:#fff;border:0;border-radius:14px;box-shadow:var(--float)}
+#wff-app .wff-brand-mark span{background:var(--coral-soft);color:var(--ink)}
+#wff-app .wff-nav-item{border:0;border-radius:999px;color:var(--ink)}
+#wff-app .wff-nav-item.active,#wff-app .wff-nav-item:hover{color:#075985;background:var(--sky-soft)}
+#wff-app .wff-panel,#wff-app .wff-metric,#wff-app .wff-loan-card,#wff-app .wff-modal,#wff-app .wff-credit-card,#wff-app .wff-calc-panel{border:1px solid var(--hair);border-radius:2rem;box-shadow:var(--float);background:#fff;color:var(--ink)}
+#wff-app .wff-metric:nth-child(4n+1),#wff-app .wff-metric:nth-child(4n+2){background:linear-gradient(145deg,#fff,var(--sky-soft));color:var(--ink)}
+#wff-app .wff-metric:nth-child(4n+3),#wff-app .wff-metric:nth-child(4n){background:linear-gradient(145deg,#fff,var(--coral-soft));color:var(--ink)}
+#wff-app .wff-metric:after{background:var(--sky);border:0}
+#wff-app .wff-metric:nth-child(4n+3):after,#wff-app .wff-metric:nth-child(4n):after{background:var(--coral)}
+#wff-app .wff-panel-head,#wff-app .wff-pagehead,#wff-app table th{border-bottom:1px solid var(--hair)}
+#wff-app .wff-button,#wff-app .wff-iconbutton,#wff-app .wff-calc-toggle{border:1px solid var(--hair);border-radius:999px;background:#fff;color:var(--ink);box-shadow:var(--soft)}
+#wff-app .wff-button.wff-primary,#wff-app .wff-button.wff-primary:hover,#wff-app .wff-add,#wff-app .wff-calc-toggle{background:linear-gradient(135deg,var(--sky),var(--deep));color:#102f45}
+#wff-app .wff-button:not(:disabled):hover{transform:translateY(-2px)}
+#wff-app .wff-button.wff-yellow,#wff-app .wff-modal-head{background:var(--sky-soft);color:var(--ink)}
+#wff-app .wff-modal-head{border:0;border-radius:1.25rem}
+#wff-app input,#wff-app select,#wff-app .wff-modal .wff-form .wff-field :is(input:not([type=hidden]),select,textarea){border:1px solid var(--hair);border-radius:14px}
+#wff-app .wff-pill,#wff-app .wff-payment-state{border:0;border-radius:999px;background:var(--sky-soft);color:#075985;padding:4px 10px;width:fit-content}
+#wff-app .wff-status-unpaid{background:#fff4d3;color:#854d0e}
+#wff-app .wff-status-paid{background:#ecfdf5;color:#047857}
+#wff-app table thead{background:var(--paper);color:var(--ink)}
+#wff-app table td{border-color:var(--hair)}
+#wff-app .wff-footer{border-top:1px solid var(--hair);background:transparent;color:var(--ink)}
+#wff-app [data-action=dashboard-ledger]:hover{outline-color:var(--deep)}
+#wff-app :focus-visible{outline-color:#0284c7!important}
+#wff-app .wff-transactions{width:100%;min-width:0;display:grid;--ledger-columns:1fr 1fr 1.65fr 1fr 1fr 1.1fr}
+#wff-app .wff-transactions.has-actions{--ledger-columns:1fr 1fr 1.65fr 1fr 1fr 1.1fr 1.35fr}
+#wff-app .wff-transactions :is(thead,tbody){display:grid}
+#wff-app .wff-transactions tr{display:grid;grid-template-columns:var(--ledger-columns);align-items:center}
+#wff-app .wff-transactions th,#wff-app .wff-transactions td:nth-child(n){min-width:0;max-width:none;padding:12px 8px;white-space:normal;overflow-wrap:anywhere;border:0}
+#wff-app .wff-transactions tbody tr{border-bottom:1px solid var(--hair)}
+#wff-app .wff-transactions tbody tr:hover{background:#f7fcff}
+@media(max-width:1279px){
+ #wff-app .wff-transactions thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ #wff-app .wff-transactions tbody{gap:12px}
+ #wff-app .wff-transactions tbody tr{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;border:1px solid var(--hair);border-radius:20px;padding:10px;background:#fff}
+ #wff-app .wff-transactions td:nth-child(n){padding:8px;text-align:left}
+ #wff-app .wff-transactions td:nth-child(3),#wff-app .wff-transactions.has-actions td:last-child{grid-column:1/-1}
+ #wff-app .wff-transactions td::before{content:attr(data-label);display:block;font-size:11px;font-weight:700;color:#625e71;margin-bottom:4px}
+}
+#wff-app .wff-topbar{position:sticky;top:0;z-index:20}
+#wff-app .wff-payment-state.wff-status-unpaid{background:#fff4d3;color:#854d0e}
+#wff-app .wff-payment-state.wff-status-paid{background:#ecfdf5;color:#047857}
+#wff-app .wff-payment-state:is(.wff-status-paid,.wff-status-unpaid)::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-inline-end:6px;vertical-align:middle}
+#wff-app .wff-category-sort-item,#wff-app .wff-tool-card{border:1px solid var(--hair);border-radius:1rem}
+#wff-app .wff-calc-keys button,#wff-app .wff-modal-close{border-radius:14px;border-color:var(--hair)}
+#wff-app .wff-calc-keys button:hover{background:var(--sky-soft)}

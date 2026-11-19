@@ -78,7 +78,8 @@ final class WFF_Frontend {
 
     public static function enqueue() {
         if (!self::is_app_request()) { return; }
-        wp_enqueue_style('wff-app', WFF_URL . 'assets/css/app.css', array(), WFF_VERSION);
+        wp_enqueue_style('wff-poppins', 'https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap', array(), null);
+        wp_enqueue_style('wff-app', WFF_URL . 'assets/css/app.css', array('wff-poppins'), WFF_VERSION);
         wp_enqueue_script('wff-charts', WFF_URL . 'assets/js/charts.js', array(), WFF_VERSION, true);
         wp_enqueue_script('wff-calculator', WFF_URL . 'assets/js/calculator.js', array(), WFF_VERSION, true);
         wp_enqueue_script('wff-app', WFF_URL . 'assets/js/app.js', array('wff-charts','wff-calculator'), WFF_VERSION, true);

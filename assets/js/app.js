@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.9.0 */
+/* WUMETAX Finance v1.9.1 */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');
@@ -515,15 +515,15 @@
       (Object.keys(S.ledgerFilter||{}).length?'<div class="wff-drill-note">正在查看總覽選取的紀錄 <button class="wff-textbtn" data-action="clear-drill">清除總覽篩選</button></div>':'')+
       codeSummary(d.code_totals||[])+
       '<div class="wff-list-count">共 '+e(d.total)+' 筆 · 每頁最多 25 筆</div>'+
-      (d.items.length?'<div class="wff-tablewrap"><table class="wff-transactions"><thead><tr>'+
+      (d.items.length?'<div class="wff-tablewrap"><table class="wff-transactions '+(canEdit()?'has-actions':'')+'"><thead><tr>'+
         '<th>日期</th><th>分類</th><th>備註</th><th>金額</th><th>類型</th><th>記帳人／帳戶</th>'+(canEdit()?'<th>操作</th>':'')+'</tr></thead><tbody>'+
-        d.items.map(x=>'<tr><td>'+e(x.occurred_on)+'</td>'+
-          '<td>'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</td>'+
-          '<td>'+e(x.note||'—')+(x.tracking_code?'<small class="wff-code-tag">代號：'+e(x.tracking_code)+'</small>':'')+(x.kind==='card_payment'?'<small class="wff-payment-state">已繳費備查，不計入支出</small>':'')+(x.statement_on?'<small>'+(x.kind==='card_payment'&&!x.payment_due_on?'繳費月份 '+e(x.statement_on.slice(0,7)):'出帳 '+e(x.statement_on))+'</small>':'')+(x.payment_due_on?'<small>繳款期限 '+e(x.payment_due_on)+'</small>':'')+((x.subscription_id||x.loan_id||x.payment_status==='unpaid')?'<small class="wff-payment-state">繳費狀態 · '+(x.payment_status==='paid'?'已繳費':'未繳費')+'</small>':'')+'</td>'+
-          '<td><strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></td>'+
-          '<td><span class="wff-pill">'+scopeName(x.scope)+' · '+readable(x.kind)+'</span></td>'+
-          '<td>'+e(x.creator_name||'—')+'<small>'+e([x.payment_channel_name,x.account_name].filter(Boolean).join(' · ')||'—')+'</small></td>'+
-          (canEdit()?'<td>'+(x.card_payment_id?'<button type="button" class="wff-textbtn" data-action="edit-transaction" data-id="'+e(x.id)+'">修改繳費紀錄</button>':((x.subscription_id||x.loan_id||x.payment_status==='unpaid')&&isOwner()?'<button type="button" class="wff-textbtn" data-action="subscription-paid" data-id="'+e(x.id)+'" data-paid="'+(x.payment_status==='paid'?'0':'1')+'">'+(x.payment_status==='paid'?'取消已繳':'標記已繳')+'</button>':'')+'<button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
+        d.items.map(x=>'<tr><td data-label="日期">'+e(x.occurred_on)+'</td>'+
+          '<td data-label="分類">'+categoryChip(x.category_name||readable(x.kind),x.category_color)+'</td>'+
+          '<td data-label="備註">'+e(x.note||'—')+(x.tracking_code?'<small class="wff-code-tag">代號：'+e(x.tracking_code)+'</small>':'')+(x.kind==='card_payment'?'<small class="wff-payment-state">已繳費備查，不計入支出</small>':'')+(x.statement_on?'<small>'+(x.kind==='card_payment'&&!x.payment_due_on?'繳費月份 '+e(x.statement_on.slice(0,7)):'出帳 '+e(x.statement_on))+'</small>':'')+(x.payment_due_on?'<small>繳款期限 '+e(x.payment_due_on)+'</small>':'')+((x.subscription_id||x.loan_id||x.payment_status==='unpaid')?'<small class="wff-payment-state '+(x.payment_status==='paid'?'wff-status-paid':'wff-status-unpaid')+'">繳費狀態 · '+(x.payment_status==='paid'?'已繳費':'未繳費')+'</small>':'')+'</td>'+
+          '<td data-label="金額"><strong class="'+(x.kind==='income'?'wff-positive':'')+'">'+money(x.amount)+'</strong></td>'+
+          '<td data-label="類型"><span class="wff-pill">'+scopeName(x.scope)+' · '+readable(x.kind)+'</span></td>'+
+          '<td data-label="記帳人／帳戶">'+e(x.creator_name||'—')+'<small>'+e([x.payment_channel_name,x.account_name].filter(Boolean).join(' · ')||'—')+'</small></td>'+
+          (canEdit()?'<td data-label="操作">'+(x.card_payment_id?'<button type="button" class="wff-textbtn" data-action="edit-transaction" data-id="'+e(x.id)+'">修改繳費紀錄</button>':((x.subscription_id||x.loan_id||x.payment_status==='unpaid')&&isOwner()?'<button type="button" class="wff-textbtn" data-action="subscription-paid" data-id="'+e(x.id)+'" data-paid="'+(x.payment_status==='paid'?'0':'1')+'">'+(x.payment_status==='paid'?'取消已繳':'標記已繳')+'</button>':'')+'<button class="wff-iconbutton" aria-label="編輯" data-action="edit-transaction" data-id="'+e(x.id)+'">✎</button>'+
             (Number(x.has_receipt)?'<button class="wff-iconbutton" type="button" aria-label="查看收據" data-action="view-receipt" data-id="'+e(x.id)+'">📷</button>':'')+
             '<button class="wff-iconbutton" aria-label="複製此記帳，建立新的一筆" title="複製記帳" data-action="duplicate-transaction" data-id="'+e(x.id)+'">⧉</button>'+ 
              '<button class="wff-iconbutton" aria-label="刪除" data-action="delete-transaction" data-id="'+e(x.id)+'">×</button>')+'</td>':'')+'</tr>').join('')+
