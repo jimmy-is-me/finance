@@ -1,4 +1,4 @@
-/* WUMETAX Finance v1.9.1 */
+/* WUMETAX Finance v1.9.2 */
 (() => {
   'use strict';
   const root = document.getElementById('wff-app');

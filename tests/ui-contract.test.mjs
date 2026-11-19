@@ -8,9 +8,9 @@ const php = readFileSync('wumetax-finance.php', 'utf8');
 const frontend = readFileSync('includes/class-wff-frontend.php', 'utf8');
 const admin = readFileSync('includes/class-wff-admin.php', 'utf8');
 
-test('Bauhaus palette and hard shadows are applied', () => {
-  assert.match(css, /--wff-red:#d02020;--wff-blue:#1040c0;--wff-yellow:#f0c020/);
-  assert.match(css, /box-shadow:5px 5px 0 #121212/);
+test('Softly palette replaces the previous visual theme', () => {
+  assert.match(css, /--paper:#fdfcf8;--sage:#e8efe8;--lavender:#efedf4;--peach:#ffb7b2/);
+  assert.doesNotMatch(css, /box-shadow:5px 5px 0 #121212/);
   assert.match(css, /prefers-reduced-motion/);
 });
 test('dashboard responsive cards and tables do not force wide layouts', () => {
@@ -27,7 +27,7 @@ test('pet-management-inspired mobile and keyboard navigation is retained', () =>
   assert.match(css, /prefers-reduced-motion/);
 });
 test('v1.4.0 homepage defaults to Finance without modifying Reading settings', () => {
-  assert.match(php, /define\('WFF_VERSION', '1.9.1'\)/);
+  assert.match(php, /define\('WFF_VERSION', '1.9.2'\)/);
   assert.match(php, /WFF_Frontend::initialize\(\)/);
   assert.match(frontend, /get_option\('wff_home_mode', 1\)/);
   assert.match(frontend, /is_front_page\(\)/);
@@ -407,7 +407,7 @@ test('1.3.1 camera receipts are JPEG <=5MB before upload',()=>{
  assert.match(js,/if\(!res\.ok\)throw new Error/);
  assert.match(js,/resetModal\(\);\s*await reload\(\)/);
 });
-test('1.9.1 transaction category precedes optional notes and dashboard includes current day',()=>{
+test('1.9.2 transaction category precedes optional notes and dashboard includes current day',()=>{
  const api=readFileSync('includes/class-wff-api.php','utf8');
  const formStart=js.indexOf("if(type==='transaction'){");
  const formEnd=js.indexOf("} else if(type==='loan'){",formStart);
